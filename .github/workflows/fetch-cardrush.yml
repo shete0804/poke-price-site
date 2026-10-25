@@ -1,0 +1,44 @@
+name: Fetch Cardrush Buying Prices
+
+on:
+  workflow_dispatch:
+  schedule:
+    # 毎時17分（混む :00 を避ける）。GitHub の定期実行は数分〜数時間遅れることがある
+    - cron: "17 * * * *"
+
+# 取得が重ならないように、1つずつ順番に動かす（実行中のものは止めない）
+concurrency:
+  group: fetch-cardrush
+  cancel-in-progress: false
+
+jobs:
+  fetch:
+    timeout-minutes: 15
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Fetch buying prices
+        run: python scripts/fetch_cardrush.py
+
+      - name: Commit results
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add results/cardrush_latest.csv results/cardrush_history.csv
+          if git diff --cached --quiet; then
+            echo "CSV に変更なし"
+          else
+            git commit -m "chore: update Cardrush buying prices [skip ci]"
+            git pull --rebase -q
+            git push
+          fi

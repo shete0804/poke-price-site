@@ -113,7 +113,6 @@ document.getElementById("gate").addEventListener("submit", async e => {
 const SOURCES = {
   paypay: "https://raw.githubusercontent.com/shete0804/paypayfleamarket-price-tracker/main/results/paypay.csv",
   mercari: "https://raw.githubusercontent.com/shete0804/mercari-scraper/main/results/mercari.csv",
-  jikasoten: "https://raw.githubusercontent.com/shete0804/poke-price-site/main/results/jikasoten.csv",
 };
 
 function parseCsv(text) {
@@ -203,39 +202,8 @@ function gapSection(gaps) {
   return section;
 }
 
-// 時価総額：買取価格 × 件数（取引量）。高い順
-function valueSection(rows) {
-  const section = el("section", "card");
-  section.appendChild(el("h2", null, "時価総額ランキング（買取価格 × 件数）"));
-  section.appendChild(el("p", "sub", "買取価格はカードラッシュの買取表。件数は pokeca-chart.com の 7 日間の取引件数。期間はカードごとに違います。"));
-  const wrap = el("div", "table-wrap");
-  const table = el("table");
-  const head = el("tr");
-  ["順位", "カード", "型番", "買取（円）", "件数", "時価総額（円）", "期間"].forEach((h, i) => {
-    const th = el("th", i === 3 || i === 4 || i === 5 ? "num" : null, h);
-    head.appendChild(th);
-  });
-  table.appendChild(el("thead")).appendChild(head);
-  const tbody = el("tbody");
-  rows.forEach((r, i) => {
-    const tr = el("tr");
-    tr.appendChild(el("td", null, String(i + 1)));
-    tr.appendChild(el("td", null, r["カード"]));
-    tr.appendChild(el("td", null, r["型番"]));
-    tr.appendChild(el("td", "num", Number(r["買取価格"]).toLocaleString("ja-JP")));
-    tr.appendChild(el("td", "num", r["件数"]));
-    tr.appendChild(el("td", "num value", Number(r["時価総額"]).toLocaleString("ja-JP")));
-    tr.appendChild(el("td", null, r["期間"]));
-    tbody.appendChild(tr);
-  });
-  table.appendChild(tbody);
-  wrap.appendChild(table);
-  section.appendChild(wrap);
-  return section;
-}
-
 async function load() {
-  const [ppText, mcText, jkText] = await Promise.all(
+  const [ppText, mcText] = await Promise.all(
     Object.values(SOURCES).map(url => fetch(url, { cache: "no-store" }).then(r => {
       if (!r.ok) throw new Error(r.status + " " + url);
       return r.text();
@@ -243,7 +211,6 @@ async function load() {
   );
   const pp = parseCsv(ppText);
   const mc = parseCsv(mcText);
-  const jk = parseCsv(jkText).sort((a, b) => Number(b["時価総額"]) - Number(a["時価総額"]));
 
   // カードの並びは PayPay の順（番号順）。メルカリだけにあるものは後ろに足す。ピカチュウは一番下
   const names = [];
@@ -282,7 +249,7 @@ async function load() {
   gaps.sort((a, b) => b.pct - a.pct);
 
   const root = document.getElementById("cards");
-  root.replaceChildren(gapSection(gaps), valueSection(jk), ...cardBlocks);
+  root.replaceChildren(gapSection(gaps), ...cardBlocks);
 
   const updated = (pp[0]?.["更新"] ?? "") + "（PayPay） / " + (mc[0]?.["更新"] ?? "") + "（メルカリ）";
   document.getElementById("updated").textContent = "結果の更新：" + updated + "。開いた時点で最新の CSV を読んでいます。";

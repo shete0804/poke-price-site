@@ -55,7 +55,11 @@ class RowParser(HTMLParser):
 
 def fetch_rows(query):
     url = BASE + urllib.parse.quote(query)
-    req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 poke-price-site"})
+    req = urllib.request.Request(url, headers={
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Safari/537.36",
+        "Accept": "text/html,application/xhtml+xml",
+        "Accept-Language": "ja,en;q=0.8",
+    })
     with urllib.request.urlopen(req, timeout=30) as res:
         html = res.read().decode("utf-8")
     parser = RowParser()
@@ -100,6 +104,7 @@ def main():
         })
 
     fields = ["取得時刻", "カード", "型番", "買取価格"]
+    LATEST.parent.mkdir(parents=True, exist_ok=True)
     with LATEST.open("w", encoding="utf-8", newline="") as f:
         w = csv.DictWriter(f, fieldnames=fields)
         w.writeheader()

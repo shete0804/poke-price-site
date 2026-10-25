@@ -7,14 +7,14 @@
 <style>
 :root {
   --bg: #f5f4f0; --paper: #ffffff; --ink: #1d1d1b; --muted: #6b6a64; --rule: #dcdad2;
-  --paypay: #b84a12; --mercari: #0c6b63; --best: #1f7a3a;
+  --paypay: #b84a12; --mercari: #0c6b63; --best: #1f7a3a; --gap: #9a2b2b;
   --sans: "Hiragino Sans", "Noto Sans JP", "Yu Gothic", system-ui, sans-serif;
   color-scheme: light;
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
     --bg: #161614; --paper: #22221f; --ink: #ecebe6; --muted: #9c9a92; --rule: #3a3a35;
-    --paypay: #f0875a; --mercari: #4fc3b5; --best: #6fd58c; color-scheme: dark;
+    --paypay: #f0875a; --mercari: #4fc3b5; --best: #6fd58c; --gap: #ef8a8a; color-scheme: dark;
   }
 }
 body {
@@ -49,6 +49,20 @@ li:first-child { border-top: none; }
 .best .price::after { content: " 最安"; font-size: 11px; font-weight: 700; margin-left: 4px; }
 .empty { color: var(--muted); font-size: 13px; margin: 0; }
 .photo-btn { margin-left: auto; font-size: 12px; padding: 2px 10px; border: 1px solid var(--mercari); color: var(--mercari); border-radius: 999px; text-decoration: none; white-space: nowrap; }
+.gap-list { list-style: none; margin: 0; padding: 0; }
+.gap-list li { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; padding: 6px 0; border-top: 1px dashed var(--rule); }
+.gap-list li:first-child { border-top: none; }
+.gap-list a { color: var(--ink); font-weight: 700; text-decoration: none; }
+.gap-list a:hover { text-decoration: underline; }
+.gap-pct { color: var(--gap); font-weight: 700; font-variant-numeric: tabular-nums; }
+.gap-detail { color: var(--muted); font-size: 13px; font-variant-numeric: tabular-nums; }
+table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; font-size: 13px; }
+th, td { padding: 5px 6px; border-top: 1px dashed var(--rule); text-align: left; }
+th { color: var(--muted); font-weight: 600; border-top: none; }
+td.num, th.num { text-align: right; }
+td.value { font-weight: 700; }
+.table-wrap { overflow-x: auto; }
+.sub { color: var(--muted); font-size: 12px; margin: 0 0 8px; }
 footer { margin-top: 20px; color: var(--muted); font-size: 12px; }
 :focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
 </style>
@@ -95,10 +109,11 @@ document.getElementById("gate").addEventListener("submit", async e => {
   }
 });
 
-// 両方の定期実行が commit する CSV を、開いたときに読みにいく
+// 定期実行が commit する CSV と、時価総額の CSV を、開いたときに読みにいく
 const SOURCES = {
   paypay: "https://raw.githubusercontent.com/shete0804/paypayfleamarket-price-tracker/main/results/paypay.csv",
   mercari: "https://raw.githubusercontent.com/shete0804/mercari-scraper/main/results/mercari.csv",
+  jikasoten: "https://raw.githubusercontent.com/shete0804/poke-price-site/main/results/jikasoten.csv",
 };
 
 function parseCsv(text) {
@@ -165,8 +180,62 @@ function siteBlock(name, cls, rows, cheapest) {
   return box;
 }
 
+const yen = n => "¥" + Math.round(n).toLocaleString("ja-JP");
+
+// 差が大きい順：PayPay の最安と メルカリ の最安の差（差 ÷ 安い方）
+function gapSection(gaps) {
+  const section = el("section", "card");
+  section.appendChild(el("h2", null, "差が大きいカード（最安値どうし）"));
+  section.appendChild(el("p", "sub", "PayPayとメルカリの最安値の差が大きい順です。カード名を押すと、そのカードまで移動します。"));
+  const list = el("ol", "gap-list");
+  for (const g of gaps) {
+    const li = el("li");
+    const a = el("a", null, g.card);
+    a.href = "#card-" + g.idx;
+    li.appendChild(a);
+    li.appendChild(el("span", "gap-pct", "+" + Math.round(g.pct * 100) + "%"));
+    const cheaper = g.ppMin < g.mcMin ? "PayPay" : "メルカリ";
+    li.appendChild(el("span", "gap-detail",
+      "PayPay " + yen(g.ppMin) + " ／ メルカリ " + yen(g.mcMin) + "（" + cheaper + "が安い・差 " + yen(g.diff) + "）"));
+    list.appendChild(li);
+  }
+  section.appendChild(list);
+  return section;
+}
+
+// 時価総額：買取価格 × 件数（取引量）。高い順
+function valueSection(rows) {
+  const section = el("section", "card");
+  section.appendChild(el("h2", null, "時価総額ランキング（買取価格 × 件数）"));
+  section.appendChild(el("p", "sub", "買取価格はカードラッシュの買取表。件数は pokeca-chart.com の 7 日間の取引件数。期間はカードごとに違います。"));
+  const wrap = el("div", "table-wrap");
+  const table = el("table");
+  const head = el("tr");
+  ["順位", "カード", "型番", "買取（円）", "件数", "時価総額（円）", "期間"].forEach((h, i) => {
+    const th = el("th", i === 3 || i === 4 || i === 5 ? "num" : null, h);
+    head.appendChild(th);
+  });
+  table.appendChild(el("thead")).appendChild(head);
+  const tbody = el("tbody");
+  rows.forEach((r, i) => {
+    const tr = el("tr");
+    tr.appendChild(el("td", null, String(i + 1)));
+    tr.appendChild(el("td", null, r["カード"]));
+    tr.appendChild(el("td", null, r["型番"]));
+    tr.appendChild(el("td", "num", Number(r["買取価格"]).toLocaleString("ja-JP")));
+    tr.appendChild(el("td", "num", r["件数"]));
+    tr.appendChild(el("td", "num value", Number(r["時価総額"]).toLocaleString("ja-JP")));
+    tr.appendChild(el("td", null, r["期間"]));
+    tbody.appendChild(tr);
+  });
+  table.appendChild(tbody);
+  wrap.appendChild(table);
+  section.appendChild(wrap);
+  return section;
+}
+
 async function load() {
-  const [ppText, mcText] = await Promise.all(
+  const [ppText, mcText, jkText] = await Promise.all(
     Object.values(SOURCES).map(url => fetch(url, { cache: "no-store" }).then(r => {
       if (!r.ok) throw new Error(r.status + " " + url);
       return r.text();
@@ -174,6 +243,7 @@ async function load() {
   );
   const pp = parseCsv(ppText);
   const mc = parseCsv(mcText);
+  const jk = parseCsv(jkText).sort((a, b) => Number(b["時価総額"]) - Number(a["時価総額"]));
 
   // カードの並びは PayPay の順（番号順）。メルカリだけにあるものは後ろに足す。ピカチュウは一番下
   const names = [];
@@ -183,23 +253,36 @@ async function load() {
   const held = "ピカチュウex";
   const ordered = names.filter(n => n !== held).concat(names.includes(held) ? [held] : []);
 
-  const root = document.getElementById("cards");
-  root.replaceChildren();
+  const best = rows => {
+    const nums = rows.map(r => r["価格"]).filter(v => /^\d+$/.test(v)).map(Number);
+    return nums.length ? Math.min(...nums) : null;
+  };
+
+  const cardBlocks = [];
+  const gaps = [];
   ordered.forEach((card, idx) => {
     const ppRows = pp.filter(r => r["カード"] === card).sort((a, b) => a["順位"] - b["順位"]);
     const mcRows = mc.filter(r => r["カード"] === card).sort((a, b) => a["順位"] - b["順位"]);
-    const best = rows => {
-      const nums = rows.map(r => r["価格"]).filter(v => /^\d+$/.test(v)).map(Number);
-      return nums.length ? Math.min(...nums) : null;
-    };
+    const ppMin = best(ppRows);
+    const mcMin = best(mcRows);
+    if (ppMin !== null && mcMin !== null) {
+      const diff = Math.abs(ppMin - mcMin);
+      gaps.push({ card, idx: idx + 1, ppMin, mcMin, diff, pct: diff / Math.min(ppMin, mcMin) });
+    }
     const section = el("section", "card");
+    section.id = "card-" + (idx + 1);
     section.appendChild(el("h2", null, "No." + (idx + 1) + " " + card));
     const grid = el("div", "sites");
-    grid.appendChild(siteBlock("PayPayフリマ", "paypay", ppRows, best(ppRows)));
-    grid.appendChild(siteBlock("メルカリ", "mercari", mcRows, best(mcRows)));
+    grid.appendChild(siteBlock("PayPayフリマ", "paypay", ppRows, ppMin));
+    grid.appendChild(siteBlock("メルカリ", "mercari", mcRows, mcMin));
     section.appendChild(grid);
-    root.appendChild(section);
+    cardBlocks.push(section);
   });
+
+  gaps.sort((a, b) => b.pct - a.pct);
+
+  const root = document.getElementById("cards");
+  root.replaceChildren(gapSection(gaps), valueSection(jk), ...cardBlocks);
 
   const updated = (pp[0]?.["更新"] ?? "") + "（PayPay） / " + (mc[0]?.["更新"] ?? "") + "（メルカリ）";
   document.getElementById("updated").textContent = "結果の更新：" + updated + "。開いた時点で最新の CSV を読んでいます。";

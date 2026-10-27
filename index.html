@@ -171,6 +171,12 @@ function siteBlock(name, cls, rows, cheapest) {
 
 const yen = n => "¥" + Math.round(n).toLocaleString("ja-JP");
 
+// ランキングの名前を押したとき：カード別のタブに切り替えて、そのカードまで移動する
+function openCard(id) {
+  document.querySelector('#tabs .tab[data-tab="cards"]').click();
+  document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
 // 差額ランキング：PayPay の最安と メルカリ の最安の差（絶対値の円）が大きい順
 function rankingSection(gaps) {
   const section = el("section", "card");
@@ -180,6 +186,10 @@ function rankingSection(gaps) {
     li.appendChild(el("span", "gap-diff", yen(g.diff)));
     const a = el("a", null, g.card);
     a.href = "#card-" + g.idx;
+    a.addEventListener("click", e => {
+      e.preventDefault();
+      openCard("card-" + g.idx);
+    });
     li.appendChild(a);
     li.appendChild(el("span", "gap-detail", "PayPay " + yen(g.ppMin) + " ／ メルカリ " + yen(g.mcMin)));
     list.appendChild(li);

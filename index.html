@@ -54,7 +54,10 @@ li:first-child { border-top: none; }
 .gap-list li:first-child { border-top: none; }
 .gap-list a { color: var(--ink); font-weight: 700; text-decoration: none; }
 .gap-list a:hover { text-decoration: underline; }
-.gap-pct { color: var(--gap); font-weight: 700; font-variant-numeric: tabular-nums; }
+.gap-diff { color: var(--gap); font-weight: 700; font-variant-numeric: tabular-nums; min-width: 6em; }
+.tabs { display: flex; gap: 8px; margin: 0 0 14px; }
+.tab { font: inherit; padding: 6px 14px; border: 1px solid var(--rule); border-radius: 999px; background: var(--paper); color: var(--ink); cursor: pointer; }
+.tab[aria-selected="true"] { background: var(--ink); color: var(--paper); }
 .gap-detail { color: var(--muted); font-size: 13px; font-variant-numeric: tabular-nums; }
 table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; font-size: 13px; }
 th, td { padding: 5px 6px; border-top: 1px dashed var(--rule); text-align: left; }
@@ -71,13 +74,11 @@ footer { margin-top: 20px; color: var(--muted); font-size: 12px; }
 <main>
   <header>
     <h1>ポケカ最安値 PayPayとメルカリ</h1>
-    <p class="lede">カードごとに、出品中で安い順の上位3件を並べています。</p>
-    <p class="legend">
-      <span><i class="dot" style="background:var(--paypay)"></i>PayPayフリマ</span>
-      <span><i class="dot" style="background:var(--mercari)"></i>メルカリ</span>
-      <span>「最安」は、そのカードで一番安い出品です。</span>
-    </p>
   </header>
+  <nav id="tabs" class="tabs" hidden>
+    <button type="button" class="tab" data-tab="ranking" aria-selected="true">差額ランキング</button>
+    <button type="button" class="tab" data-tab="cards" aria-selected="false">カード別</button>
+  </nav>
   <form id="gate" class="card">
     <label for="pw">パスワード</label>
     <p><input id="pw" type="password" autocomplete="current-password" required>
@@ -85,7 +86,6 @@ footer { margin-top: 20px; color: var(--muted); font-size: 12px; }
     <p id="gate-msg" class="empty" hidden>パスワードが違います。</p>
   </form>
   <div id="cards" hidden><p class="empty">結果を読み込んでいます…</p></div>
-  <footer id="updated" hidden></footer>
 </main>
 <script>
 // 簡易的な入口のパスワード（ハッシュだけを置く）。CSV は公開のままなので本当の保護ではない
@@ -102,7 +102,6 @@ document.getElementById("gate").addEventListener("submit", async e => {
   if (await sha256hex(input) === PW_HASH) {
     document.getElementById("gate").hidden = true;
     document.getElementById("cards").hidden = false;
-    document.getElementById("updated").hidden = false;
     load().catch(showError);
   } else {
     document.getElementById("gate-msg").hidden = false;
@@ -164,15 +163,6 @@ function siteBlock(name, cls, rows, cheapest) {
     a.rel = "noopener noreferrer";
     span.appendChild(a);
     li.appendChild(span);
-    if (cls === "mercari") {
-      // 写真を作る：商品番号を入れた Issue の画面を開く（送信ボタンを押すと処理が始まる）
-      const id = r["URL"].split("/").pop();
-      const btn = el("a", "photo-btn", "写真を作る");
-      btn.href = "https://github.com/shete0804/mercari-photo-test/issues/new?title=" + encodeURIComponent(id);
-      btn.target = "_blank";
-      btn.rel = "noopener noreferrer";
-      li.appendChild(btn);
-    }
     list.appendChild(li);
   }
   box.appendChild(list);
@@ -181,21 +171,17 @@ function siteBlock(name, cls, rows, cheapest) {
 
 const yen = n => "¥" + Math.round(n).toLocaleString("ja-JP");
 
-// 差が大きい順：PayPay の最安と メルカリ の最安の差（差 ÷ 安い方）
-function gapSection(gaps) {
+// 差額ランキング：PayPay の最安と メルカリ の最安の差（絶対値の円）が大きい順
+function rankingSection(gaps) {
   const section = el("section", "card");
-  section.appendChild(el("h2", null, "差が大きいカード（最安値どうし）"));
-  section.appendChild(el("p", "sub", "PayPayとメルカリの最安値の差が大きい順です。カード名を押すと、そのカードまで移動します。"));
   const list = el("ol", "gap-list");
   for (const g of gaps) {
     const li = el("li");
+    li.appendChild(el("span", "gap-diff", yen(g.diff)));
     const a = el("a", null, g.card);
     a.href = "#card-" + g.idx;
     li.appendChild(a);
-    li.appendChild(el("span", "gap-pct", "+" + Math.round(g.pct * 100) + "%"));
-    const cheaper = g.ppMin < g.mcMin ? "PayPay" : "メルカリ";
-    li.appendChild(el("span", "gap-detail",
-      "PayPay " + yen(g.ppMin) + " ／ メルカリ " + yen(g.mcMin) + "（" + cheaper + "が安い・差 " + yen(g.diff) + "）"));
+    li.appendChild(el("span", "gap-detail", "PayPay " + yen(g.ppMin) + " ／ メルカリ " + yen(g.mcMin)));
     list.appendChild(li);
   }
   section.appendChild(list);
@@ -211,6 +197,13 @@ async function load() {
   );
   const pp = parseCsv(ppText);
   const mc = parseCsv(mcText);
+
+  // カード名の統一：全角・半角の違いや空白を無視して同じカードとみなし、表示は PayPay の名前にそろえる
+  const keyOf = s => s.replace(/＆/g, "&").replace(/[\s　]/g, "").toLowerCase();
+  const display = {};
+  for (const r of pp) display[keyOf(r["カード"])] ??= r["カード"];
+  for (const r of mc) display[keyOf(r["カード"])] ??= r["カード"];
+  for (const r of [...pp, ...mc]) r["カード"] = display[keyOf(r["カード"])];
 
   // カードの並びは PayPay の順（番号順）。メルカリだけにあるものは後ろに足す。ピカチュウは一番下
   const names = [];
@@ -246,13 +239,28 @@ async function load() {
     cardBlocks.push(section);
   });
 
-  gaps.sort((a, b) => b.pct - a.pct);
+  gaps.sort((a, b) => b.diff - a.diff);
+
+  // タブで切り替える（ページは移動しない）：差額ランキング と カード別
+  const rankingBox = el("div", null);
+  rankingBox.id = "ranking";
+  rankingBox.appendChild(rankingSection(gaps));
+  const cardsBox = el("div", null);
+  cardsBox.id = "card-list";
+  cardsBox.hidden = true;
+  cardBlocks.forEach(s => cardsBox.appendChild(s));
 
   const root = document.getElementById("cards");
-  root.replaceChildren(gapSection(gaps), ...cardBlocks);
-
-  const updated = (pp[0]?.["更新"] ?? "") + "（PayPay） / " + (mc[0]?.["更新"] ?? "") + "（メルカリ）";
-  document.getElementById("updated").textContent = "結果の更新：" + updated + "。開いた時点で最新の CSV を読んでいます。";
+  root.replaceChildren(rankingBox, cardsBox);
+  document.getElementById("tabs").hidden = false;
+  document.querySelectorAll("#tabs .tab").forEach(btn => {
+    btn.addEventListener("click", () => {
+      const isRanking = btn.dataset.tab === "ranking";
+      rankingBox.hidden = !isRanking;
+      cardsBox.hidden = isRanking;
+      document.querySelectorAll("#tabs .tab").forEach(b => b.setAttribute("aria-selected", String(b === btn)));
+    });
+  });
 }
 
 function showError(err) {

@@ -55,7 +55,7 @@ li:first-child { border-top: none; }
 .gap-list a { color: var(--ink); font-weight: 700; text-decoration: none; }
 .gap-list a:hover { text-decoration: underline; }
 .gap-diff { color: var(--gap); font-weight: 700; font-variant-numeric: tabular-nums; min-width: 6em; }
-.tabs { display: flex; gap: 8px; margin: 0 0 14px; }
+.tabs { display: flex; gap: 8px; margin: 0 0 14px; padding: 8px 0; position: sticky; top: 0; z-index: 10; background: var(--bg); }
 .tab { font: inherit; padding: 6px 14px; border: 1px solid var(--rule); border-radius: 999px; background: var(--paper); color: var(--ink); cursor: pointer; }
 .tab[aria-selected="true"] { background: var(--ink); color: var(--paper); }
 .gap-detail { color: var(--muted); font-size: 13px; font-variant-numeric: tabular-nums; }

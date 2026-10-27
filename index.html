@@ -1,4 +1,4 @@
-<!doctype html>
+﻿<!doctype html>
 <html lang="ja">
 <head>
 <meta charset="utf-8">
@@ -198,6 +198,61 @@ function rankingSection(gaps) {
   return section;
 }
 
+// 表示するカード名は、検索で使う 1 つ目の検索語にそろえる（カード名の統一）
+const SEARCH_NAME = {
+  "緑ミュウ RGB": "ミュウ G RGB",
+  "赤ミュウ RGB": "ミュウ R RGB",
+  "青ミュウ RGB": "ミュウ B RGB",
+  "ブラッキーVMAX SA": "ブラッキーVMAX SA",
+  "メガリザードンXex SAR": "メガリザードンX SAR",
+  "レックウザVMAX SA": "レックウザVMAX SA",
+  "メガリザードンYex MUR": "メガリザードンY ex MUR",
+  "ピカチュウex": "ピカチュウex スタートデッキ100",
+  "ギラティナV SA": "ギラティナV SA",
+  "ルギアV SA": "ルギアV SA",
+  "メガリザードンXex MUR": "メガリザードンX MUR",
+  "ミュウVMAX SA": "ミュウVMAX SA",
+  "メガレックウザex MUR": "メガレックウザ MUR",
+  "ニンフィアVMAX SA": "ニンフィアVMAX SA",
+  "レッドのピカチュウ": "レッドのピカチュウ",
+  "かんこうきゃく": "かんこうきゃく",
+  "ピカチュウ 227/S-P": "ピカチュウ",
+  "ピカチュウ&ゼクロムGX": "ピカチュウ&ゼクロムGX SA",
+  "ブラッキー&ダークライGX": "ブラッキー&ダークライGX SA",
+  "イーブイ": "イーブイ",
+  "ミュウex 347/190": "ミュウex",
+  "ミュウex SAR 205/165": "ミュウex SAR",
+  "ゼクロムex": "ゼクロムex",
+  "レシラムex": "レシラムex",
+  "グレイシアVMAX": "グレイシアVMAX SA",
+  "ルチア": "ルチア",
+  "ピカチュウex 764/742": "ピカチュウex",
+  "ビクティニ": "ビクティニ",
+  "レックウザV": "レックウザV",
+  "ピカチュウVMAX": "ピカチュウVMAX",
+  "モクロー": "モクロー",
+  "ルザミーネ": "ルザミーネ SR",
+  "リザードンex SAR": "リザードンex SAR",
+  "リザードン 25th": "リザードン",
+  "レックウザGX": "レックウザGX",
+  "ミュウツーGX": "ミュウツーGX",
+  "サナ": "サナ SR",
+  "ピカチュウ 175/XY-P": "ピカチュウ",
+  "エリカのおもてなし": "エリカのおもてなし",
+  "こくばバドレックスVMAX": "こくばバドレックスVMAX",
+  "バシャーモVMAX": "バシャーモVMAX",
+  "カイリューV": "カイリューV",
+  "ピカチュウ 061/SM-P": "ピカチュウ",
+  "シロナ": "シロナ",
+  "シロナのガブリアスex": "シロナのガブリアスex",
+  "ナンジャモ SAR": "ナンジャモ",
+  "ブースターEX": "ブースターEX",
+  "ブラッキーGX": "ブラッキーGX",
+  "MサーナイトEX": "MサーナイトEX",
+  "バンギラスV SA": "バンギラスV SA"
+};
+
+
 async function load() {
   const [ppText, mcText] = await Promise.all(
     Object.values(SOURCES).map(url => fetch(url, { cache: "no-store" }).then(r => {
@@ -214,6 +269,7 @@ async function load() {
   for (const r of pp) display[keyOf(r["カード"])] ??= r["カード"];
   for (const r of mc) display[keyOf(r["カード"])] ??= r["カード"];
   for (const r of [...pp, ...mc]) r["カード"] = display[keyOf(r["カード"])];
+  for (const r of [...pp, ...mc]) r["カード"] = SEARCH_NAME[r["カード"]] ?? r["カード"];
 
   // カードの並びは PayPay の順（番号順）。メルカリだけにあるものは後ろに足す。ピカチュウは一番下
   const names = [];

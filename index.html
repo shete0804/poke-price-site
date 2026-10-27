@@ -306,7 +306,8 @@ async function load() {
     cardBlocks.push(section);
   });
 
-  gaps.sort((a, b) => Math.abs(b.diff) - Math.abs(a.diff));
+  // プラスの差額を上（大きい順）、マイナスの差額を下に並べる
+  gaps.sort((a, b) => b.diff - a.diff);
 
   // タブで切り替える（ページは移動しない）：差額ランキング と カード別
   const rankingBox = el("div", null);

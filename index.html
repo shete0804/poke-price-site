@@ -86,6 +86,7 @@ footer { margin-top: 20px; color: var(--muted); font-size: 12px; }
     <p id="gate-msg" class="empty" hidden>パスワードが違います。</p>
   </form>
   <div id="cards" hidden><p class="empty">結果を読み込んでいます…</p></div>
+  <footer id="updated" hidden></footer>
 </main>
 <script>
 // 簡易的な入口のパスワード（ハッシュだけを置く）。CSV は公開のままなので本当の保護ではない
@@ -102,6 +103,7 @@ document.getElementById("gate").addEventListener("submit", async e => {
   if (await sha256hex(input) === PW_HASH) {
     document.getElementById("gate").hidden = true;
     document.getElementById("cards").hidden = false;
+    document.getElementById("updated").hidden = false;
     load().catch(showError);
   } else {
     document.getElementById("gate-msg").hidden = false;
@@ -326,6 +328,9 @@ async function load() {
   cardsBox.id = "card-list";
   cardsBox.hidden = true;
   cardBlocks.forEach(s => cardsBox.appendChild(s));
+
+  const updated = (pp[0]?.["更新"] ?? "") + "（PayPay） / " + (mc[0]?.["更新"] ?? "") + "（メルカリ）";
+  document.getElementById("updated").textContent = "結果の更新：" + updated + "。開いた時点で最新の CSV を読んでいます。";
 
   const root = document.getElementById("cards");
   root.replaceChildren(rankingBox, cardsBox);

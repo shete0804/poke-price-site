@@ -163,6 +163,15 @@ function siteBlock(name, cls, rows, cheapest) {
     a.rel = "noopener noreferrer";
     span.appendChild(a);
     li.appendChild(span);
+    if (cls === "mercari") {
+      // 写真を作る：商品番号を入れた Issue の画面を開く（送信ボタンを押すと処理が始まる）
+      const id = r["URL"].split("/").pop();
+      const btn = el("a", "photo-btn", "写真を作る");
+      btn.href = "https://github.com/shete0804/mercari-photo-test/issues/new?title=" + encodeURIComponent(id);
+      btn.target = "_blank";
+      btn.rel = "noopener noreferrer";
+      li.appendChild(btn);
+    }
     list.appendChild(li);
   }
   box.appendChild(list);

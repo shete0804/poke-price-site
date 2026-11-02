@@ -1,13 +1,13 @@
 カード,商品ID,根拠（スニダンの商品名）
 ブラッキーVMAX SA,93021,Umbreon VMAX HR: SA [S6a 095/069]
-メガリザードンXex SAR,704401,MEGA Charizard X ex SAR [M2 110/080]
+メガリザードンXex SAR インフェルノX,704401,MEGA Charizard X ex SAR [M2 110/080]
 レックウザVMAX SA,93017,Rayquaza VMAX HR: SA [S7R 083/067]
 メガリザードンYex MUR,742562,MEGA Charizard Y ex MUR Style [MC 766/742]
-ギラティナV SA,93379,Giratina V SR: SA [S11 111/100]
+ギラティナV SA ロストアビス,93379,Giratina V SR: SA [S11 111/100]
 ルギアV SA,100567,Lugia V SR: SA [s12 110/098]
 メガリザードンXex MUR,704407,MEGA Charizard X ex MUR [M2 116/080]
 ミュウVMAX SA,93016,Mew VMAX HR: SA [S8 119/100]
-メガレックウザex MUR,868770,MEGA Rayquaza ex MUR [M6 113/076]
+メガレックウザex MUR ストームエメラルダ,868770,MEGA Rayquaza ex MUR [M6 113/076]
 ニンフィアVMAX SA,93022,Sylveon VMAX HR: SA [S6a 093/069]
 レッドのピカチュウ,107447,Red's Pikachu: PROMO [SM-P 270]
 ミュウex 347/190,164250,Mew ex (Bubble Mew) SAR [SV4a 347/190]
@@ -37,3 +37,7 @@ MサーナイトEX,91491,M Gardevoir EX RR :1ED [CP3 020/032]
 ゼクロムex,585213,Zekrom ex BWR [SV11B 174/086]
 レシラムex,585221,Reshiram ex BWR [SV11W 174/086]
 ブースターEX,91492,Flareon EX RR :1ED [CP3 007/032] (高い方の版に合わせる)
+緑ミュウ RGB,898626,Mew [M6a G/RGB] 30th CELEBRATION
+赤ミュウ RGB,898625,Mew [M6a R/RGB] 30th CELEBRATION
+青ミュウ RGB,898627,Mew [M6a B/RGB] 30th CELEBRATION
+バンギラスV SA,91189,Tyranitar V SR: SA [S5I 077/070]

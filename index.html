@@ -68,9 +68,11 @@ td.value { font-weight: 700; }
 .sub { color: var(--muted); font-size: 12px; margin: 0 0 8px; }
 footer { margin-top: 20px; color: var(--muted); font-size: 12px; }
 :focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+.reload { position: fixed; top: 10px; right: 10px; z-index: 10; font: inherit; font-size: 12px; padding: 4px 10px; border: 1px solid var(--rule); border-radius: 999px; background: var(--paper); color: var(--ink); cursor: pointer; }
 </style>
 </head>
 <body>
+<button type="button" class="reload" onclick="location.reload()">↻ 再読み込み</button>
 <main>
   <header>
     <h1>ポケカ最安値 PayPayとメルカリ</h1>

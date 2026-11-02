@@ -189,7 +189,7 @@ function openCard(id) {
   document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
-// 差額ランキング：PayPay の最安と、メルカリ・SNKRDUNK のうち差が大きい方の最安との差（絶対値の円）が大きい順
+// 差額ランキング：PayPay の最安から、メルカリ・SNKRDUNK のうち安い方の最安を引いた差（絶対値の円）が大きい順
 function rankingSection(gaps) {
   const section = el("section", "card");
   const list = el("ol", "gap-list");
@@ -257,11 +257,11 @@ async function load() {
     const ppMin = best(ppRows);
     const mcMin = best(mcRows);
     const snMin = best(snRows);
-    // 比べる相手は メルカリ と SNKRDUNK。PayPay との差が大きい方を採る（差額 = PayPay の最安 − 相手の最安、符号つき）
+    // 比べる相手は メルカリ と SNKRDUNK のうち、最安値が安い方（差額 = PayPay の最安 − その最安、符号つき）
     const others = [{ name: "メルカリ", min: mcMin }, { name: "SNKRDUNK", min: snMin }]
       .filter(o => o.min !== null);
     if (ppMin !== null && others.length > 0) {
-      const o = others.reduce((a, b) => (Math.abs(ppMin - b.min) > Math.abs(ppMin - a.min) ? b : a));
+      const o = others.reduce((a, b) => (b.min < a.min ? b : a));
       gaps.push({ card, idx: idx + 1, ppMin, otherName: o.name, otherMin: o.min, diff: ppMin - o.min });
     }
     const section = el("section", "card");

@@ -60,7 +60,8 @@ def cheapest_listings(product_id):
         for item in items:
             state = raw_condition(item) if item.get("status") == 0 else None
             if state:
-                found.append((item["price"], state))
+                # 出品1件の個別ページは /apparels/商品ID/used/出品ID
+                found.append((item["price"], state, f"{PRODUCT}{product_id}/used/{item['id']}"))
         time.sleep(WAIT_SEC)
     return found[:TOP_N]
 
@@ -72,7 +73,6 @@ def main():
 
     results = []
     for t in targets:
-        url = PRODUCT + t["商品ID"]
         try:
             listings = cheapest_listings(t["商品ID"])
         except Exception as e:  # 取れなかったカードは空欄で残す
@@ -80,10 +80,10 @@ def main():
             print(f"取得失敗: {t['カード']}: {e}")
         for rank in range(1, TOP_N + 1):
             if rank <= len(listings):
-                price, state = listings[rank - 1]
+                price, state, url = listings[rank - 1]
                 results.append({"カード": t["カード"], "順位": rank, "価格": price, "状態": state, "URL": url, "更新": now})
             else:
-                results.append({"カード": t["カード"], "順位": rank, "価格": "", "状態": "", "URL": url, "更新": now})
+                results.append({"カード": t["カード"], "順位": rank, "価格": "", "状態": "", "URL": "", "更新": now})
 
     fields = ["カード", "順位", "価格", "状態", "URL", "更新"]
     LATEST.parent.mkdir(parents=True, exist_ok=True)

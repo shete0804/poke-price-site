@@ -114,6 +114,7 @@ document.getElementById("gate").addEventListener("submit", async e => {
 const SOURCES = {
   paypay: "https://raw.githubusercontent.com/shete0804/paypayfleamarket-price-tracker/main/results/paypay.csv",
   mercari: "https://raw.githubusercontent.com/shete0804/mercari-scraper/main/results/mercari.csv",
+  snkrdunk: "https://raw.githubusercontent.com/shete0804/poke-price-site/main/results/snkrdunk_latest.csv",
 };
 
 function parseCsv(text) {
@@ -157,7 +158,7 @@ function siteBlock(name, cls, rows, cheapest) {
       img.className = "thumb";
       li.appendChild(img);
     }
-    li.appendChild(el("span", "rank", r["順位"] + "位"));
+    li.appendChild(el("span", "rank", r["順位"] + "位" + (r["状態"] ? " " + r["状態"] : "")));
     const span = el("span", "price");
     const a = el("a", null, "¥" + price.toLocaleString("ja-JP"));
     a.href = r["URL"];
@@ -188,7 +189,7 @@ function openCard(id) {
   document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
-// 差額ランキング：PayPay の最安と メルカリ の最安の差（絶対値の円）が大きい順
+// 差額ランキング：PayPay の最安と、メルカリ・SNKRDUNK のうち差が大きい方の最安との差（絶対値の円）が大きい順
 function rankingSection(gaps) {
   const section = el("section", "card");
   const list = el("ol", "gap-list");
@@ -202,7 +203,7 @@ function rankingSection(gaps) {
       openCard("card-" + g.idx);
     });
     li.appendChild(a);
-    li.appendChild(el("span", "gap-detail", "PayPay " + yen(g.ppMin) + " ／ メルカリ " + yen(g.mcMin)));
+    li.appendChild(el("span", "gap-detail", "PayPay " + yen(g.ppMin) + " ／ " + g.otherName + " " + yen(g.otherMin)));
     list.appendChild(li);
   }
   section.appendChild(list);
@@ -214,7 +215,7 @@ const SEARCH_NAME = {};  // 表示名＝検索名＝設定ファイルの名前�
 
 
 async function load() {
-  const [ppText, mcText] = await Promise.all(
+  const [ppText, mcText, snText] = await Promise.all(
     Object.values(SOURCES).map(url => fetch(url, { cache: "no-store" }).then(r => {
       if (!r.ok) throw new Error(r.status + " " + url);
       return r.text();
@@ -222,18 +223,21 @@ async function load() {
   );
   const pp = parseCsv(ppText);
   const mc = parseCsv(mcText);
+  const sn = parseCsv(snText);
+  const all = [...pp, ...mc, ...sn];
 
   // カード名の統一：全角・半角の違いや空白を無視して同じカードとみなし、表示は PayPay の名前にそろえる
   const keyOf = s => s.replace(/＆/g, "&").replace(/[\s　]/g, "").toLowerCase();
   const display = {};
   for (const r of pp) display[keyOf(r["カード"])] ??= r["カード"];
   for (const r of mc) display[keyOf(r["カード"])] ??= r["カード"];
-  for (const r of [...pp, ...mc]) r["カード"] = display[keyOf(r["カード"])];
-  for (const r of [...pp, ...mc]) r["カード"] = SEARCH_NAME[r["カード"]] ?? r["カード"];
+  for (const r of sn) display[keyOf(r["カード"])] ??= r["カード"];
+  for (const r of all) r["カード"] = display[keyOf(r["カード"])];
+  for (const r of all) r["カード"] = SEARCH_NAME[r["カード"]] ?? r["カード"];
 
   // カードの並びは PayPay の順（番号順）。メルカリだけにあるものは後ろに足す。ピカチュウは一番下
   const names = [];
-  for (const r of [...pp, ...mc]) {
+  for (const r of all) {
     if (!names.includes(r["カード"])) names.push(r["カード"]);
   }
   const held = "ピカチュウex";
@@ -249,12 +253,16 @@ async function load() {
   ordered.forEach((card, idx) => {
     const ppRows = pp.filter(r => r["カード"] === card).sort((a, b) => a["順位"] - b["順位"]);
     const mcRows = mc.filter(r => r["カード"] === card).sort((a, b) => a["順位"] - b["順位"]);
+    const snRows = sn.filter(r => r["カード"] === card).sort((a, b) => a["順位"] - b["順位"]);
     const ppMin = best(ppRows);
     const mcMin = best(mcRows);
-    if (ppMin !== null && mcMin !== null) {
-      const diff = Math.abs(ppMin - mcMin);
-      // 差額 = PayPay の最安 − メルカリの最安（符号つき）
-      gaps.push({ card, idx: idx + 1, ppMin, mcMin, diff: ppMin - mcMin });
+    const snMin = best(snRows);
+    // 比べる相手は メルカリ と SNKRDUNK。PayPay との差が大きい方を採る（差額 = PayPay の最安 − 相手の最安、符号つき）
+    const others = [{ name: "メルカリ", min: mcMin }, { name: "SNKRDUNK", min: snMin }]
+      .filter(o => o.min !== null);
+    if (ppMin !== null && others.length > 0) {
+      const o = others.reduce((a, b) => (Math.abs(ppMin - b.min) > Math.abs(ppMin - a.min) ? b : a));
+      gaps.push({ card, idx: idx + 1, ppMin, otherName: o.name, otherMin: o.min, diff: ppMin - o.min });
     }
     const section = el("section", "card");
     section.id = "card-" + (idx + 1);
@@ -262,12 +270,13 @@ async function load() {
     const grid = el("div", "sites");
     grid.appendChild(siteBlock("PayPayフリマ", "paypay", ppRows, ppMin));
     grid.appendChild(siteBlock("メルカリ", "mercari", mcRows, mcMin));
+    grid.appendChild(siteBlock("SNKRDUNK（未鑑定・出品中）", "snkrdunk", snRows, snMin));
     section.appendChild(grid);
     cardBlocks.push(section);
   });
 
-  // プラスの差額を上（大きい順）、マイナスの差額を下に並べる
-  gaps.sort((a, b) => b.diff - a.diff);
+  // 差額の絶対値が大きい順（プラスもマイナスも同じ並びで比べる）
+  gaps.sort((a, b) => Math.abs(b.diff) - Math.abs(a.diff));
 
   // タブで切り替える（ページは移動しない）：差額ランキング と カード別
   const rankingBox = el("div", null);

@@ -102,7 +102,7 @@ footer { margin-top: 20px; color: var(--muted); font-size: 12px; }
     <button type="button" class="tab" data-tab="ranking" aria-selected="true">差額ランキング</button>
     <button type="button" class="tab" data-tab="cards" aria-selected="false">カード別</button>
   </nav>
-  <form id="gate" class="card">
+  <form id="gate" class="card" hidden>
     <label for="pw">パスワード</label>
     <p><input id="pw" type="password" autocomplete="current-password" required>
     <button type="submit">開く</button></p>
@@ -334,6 +334,9 @@ function showError(err) {
   const root = document.getElementById("cards");
   root.replaceChildren(el("p", "empty", "結果を読み込めませんでした：" + err.message));
 }
+
+// 【確認用・一時】パスワードを外している。戻すときは、この行と gate の hidden を消す（git revert でも戻せる）
+document.getElementById("cards").hidden = false; document.getElementById("updated").hidden = false; load().catch(showError);
 </script>
 </body>
 </html>

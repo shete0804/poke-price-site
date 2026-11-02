@@ -110,6 +110,10 @@ footer { margin-top: 20px; color: var(--muted); font-size: 12px; }
   <footer id="updated" hidden></footer>
 </main>
 <script>
+// 開いたら必ず一番上から表示する（前回のスクロール位置は覚えない）
+if ("scrollRestoration" in history) history.scrollRestoration = "manual";
+window.scrollTo(0, 0);
+
 // 簡易的な入口のパスワード（ハッシュだけを置く）。CSV は公開のままなので本当の保護ではない
 const PW_HASH = "224948ca810fc2bc9e3d80c0b1129fe2487fa4e307961001ab8443db82f7bb69";
 

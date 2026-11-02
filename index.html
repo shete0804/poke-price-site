@@ -70,6 +70,24 @@ footer { margin-top: 20px; color: var(--muted); font-size: 12px; }
 :focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
 .reload { position: fixed; top: 10px; right: 10px; z-index: 10; font: inherit; font-size: 14px; padding: 6px 14px; min-height: 44px; border: 1px solid var(--rule); border-radius: 999px; background: var(--paper); color: var(--ink); cursor: pointer; }
 @media (max-width: 560px) { .reload { font-size: 16px; padding: 10px 18px; } }
+/* スマホ：全体の文字と余白を大きくする（PC の見た目は変えない） */
+@media (max-width: 560px) {
+  body { font-size: 16px; }
+  h1 { font-size: 26px; }
+  .legend { font-size: 15px; }
+  .card { padding: 16px; }
+  .card h2 { font-size: 19px; }
+  .site-name { font-size: 14px; }
+  .rank { font-size: 15px; min-width: 3em; }
+  li { padding: 6px 0; }
+  .thumb { width: 64px; height: 64px; }
+  .photo-btn { font-size: 14px; padding: 4px 12px; }
+  .empty { font-size: 15px; }
+  .gap-list li { padding: 10px 0; }
+  .gap-diff { min-width: 0; }
+  .gap-detail { font-size: 14px; }
+  .tab { font-size: 16px; padding: 8px 16px; }
+}
 </style>
 </head>
 <body>

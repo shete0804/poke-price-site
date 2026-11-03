@@ -52,9 +52,10 @@ li.excluded .price a { text-decoration: line-through; }
 .best .price { color: var(--best); }
 .best .price::after { content: " 最安"; font-size: 11px; font-weight: 700; margin-left: 4px; }
 .empty { color: var(--muted); font-size: 13px; margin: 0; }
-.photo-btn { margin-left: auto; font-size: 12px; padding: 2px 10px; border: 1px solid var(--mercari); color: var(--mercari); border-radius: 999px; text-decoration: none; white-space: nowrap; }
-.exclude-btn { font: inherit; font-size: 12px; padding: 2px 10px; margin-left: auto; white-space: nowrap; border: 1px solid var(--rule); border-radius: 999px; background: var(--paper); color: var(--muted); cursor: pointer; }
-.photo-btn + .exclude-btn { margin-left: 0; }
+/* 出品の行の下、右側に「写真を作る」と「除外」をそろえる */
+.actions { flex: 1 1 100%; display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
+.photo-btn { font-size: 12px; padding: 2px 10px; border: 1px solid var(--mercari); color: var(--mercari); border-radius: 999px; text-decoration: none; white-space: nowrap; }
+.exclude-btn { font: inherit; font-size: 12px; padding: 2px 10px; white-space: nowrap; border: 1px solid var(--rule); border-radius: 999px; background: var(--paper); color: var(--muted); cursor: pointer; }
 .exclude-btn[aria-pressed="true"] { border-color: var(--gap); color: var(--gap); }
 .gap-list { list-style: none; margin: 0; padding: 0; }
 .gap-list li { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; padding: 6px 0; border-top: 1px dashed var(--rule); }
@@ -211,6 +212,8 @@ function siteBlock(name, cls, rows, cheapest, excluded, toggle) {
     a.rel = "noopener noreferrer";
     span.appendChild(a);
     li.appendChild(span);
+    const actions = el("div", "actions");
+    li.appendChild(actions);
     if (cls === "mercari" || cls === "snkrdunk") {
       // 写真を作る：商品番号を入れた Issue の画面を開く（送信ボタンを押すと処理が始まる）
       // メルカリは m+商品番号、スニダンは s+商品ID-出品ID（URL の /apparels/商品ID/used/出品ID から作る）
@@ -221,13 +224,13 @@ function siteBlock(name, cls, rows, cheapest, excluded, toggle) {
       btn.href = "https://github.com/shete0804/mercari-photo-test/issues/new?title=" + encodeURIComponent(id);
       btn.target = "_blank";
       btn.rel = "noopener noreferrer";
-      li.appendChild(btn);
+      actions.appendChild(btn);
     }
     const xbtn = el("button", "exclude-btn", off ? "取り消す" : "除外");
     xbtn.type = "button";
     xbtn.setAttribute("aria-pressed", String(off));
     xbtn.addEventListener("click", () => toggle(r["URL"]));
-    li.appendChild(xbtn);
+    actions.appendChild(xbtn);
     list.appendChild(li);
   }
   box.appendChild(list);

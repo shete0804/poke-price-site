@@ -34,6 +34,10 @@ h1 { font-size: 22px; margin: 0 0 4px; text-wrap: balance; }
 .dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
 .card { background: var(--paper); border: 1px solid var(--rule); border-radius: 10px; padding: 14px 16px; margin-bottom: 12px; }
 .card h2 { font-size: 16px; margin: 0 0 10px; }
+.card-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin: 0 0 10px; }
+.card-head h2 { margin: 0; }
+.exclude-btn { font: inherit; font-size: 12px; padding: 2px 10px; margin-left: auto; white-space: nowrap; border: 1px solid var(--rule); border-radius: 999px; background: var(--paper); color: var(--muted); cursor: pointer; }
+.exclude-btn[aria-pressed="true"] { border-color: var(--gap); color: var(--gap); }
 .sites { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; min-width: 0; }
 @media (max-width: 560px) { .sites { grid-template-columns: 1fr; gap: 10px; } }
 .site { min-width: 0; }
@@ -219,24 +223,53 @@ function openCard(id) {
   document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
+// 除外の設定は、この端末のブラウザに保存する（閉じても残る）。保存できない環境では、その場の表示だけ変わる
+const EXCLUDE_KEY = "excludedCards";
+function readExcluded() {
+  try { return new Set(JSON.parse(localStorage.getItem(EXCLUDE_KEY) || "[]")); } catch { return new Set(); }
+}
+function writeExcluded(set) {
+  try { localStorage.setItem(EXCLUDE_KEY, JSON.stringify([...set])); } catch { /* 保存できなくても表示は動く */ }
+}
+function setExcludeLabel(btn, off) {
+  btn.textContent = off ? "除外中（取り消す）" : "ランキングから除外";
+  btn.setAttribute("aria-pressed", String(off));
+}
+
+// 差額ランキングの1行。除外中の行には「取り消す」を出す
+function gapRow(g, toggle, off) {
+  const li = el("li");
+  li.appendChild(el("span", "gap-diff", (g.diff >= 0 ? "+" : "−") + yen(Math.abs(g.diff))));
+  const a = el("a", null, g.card);
+  a.href = "#card-" + g.idx;
+  a.addEventListener("click", e => {
+    e.preventDefault();
+    openCard("card-" + g.idx);
+  });
+  li.appendChild(a);
+  li.appendChild(el("span", "gap-detail", "PayPay " + yen(g.ppMin) + " ／ " + g.otherName + " " + yen(g.otherMin)));
+  const btn = el("button", "exclude-btn", off ? "取り消す" : "除外");
+  btn.type = "button";
+  btn.setAttribute("aria-pressed", String(off));
+  btn.addEventListener("click", () => toggle(g.card));
+  li.appendChild(btn);
+  return li;
+}
+
 // 差額ランキング：PayPay の最安から、メルカリ・SNKRDUNK のうち安い方の最安を引いた差（絶対値の円）が大きい順
-function rankingSection(gaps) {
+// 除外したカードは計算から外し、下の「除外中」にまとめる
+function rankingSection(gaps, excluded, toggle) {
   const section = el("section", "card");
   const list = el("ol", "gap-list");
-  for (const g of gaps) {
-    const li = el("li");
-    li.appendChild(el("span", "gap-diff", (g.diff >= 0 ? "+" : "−") + yen(Math.abs(g.diff))));
-    const a = el("a", null, g.card);
-    a.href = "#card-" + g.idx;
-    a.addEventListener("click", e => {
-      e.preventDefault();
-      openCard("card-" + g.idx);
-    });
-    li.appendChild(a);
-    li.appendChild(el("span", "gap-detail", "PayPay " + yen(g.ppMin) + " ／ " + g.otherName + " " + yen(g.otherMin)));
-    list.appendChild(li);
-  }
+  for (const g of gaps.filter(g => !excluded.has(g.card))) list.appendChild(gapRow(g, toggle, false));
   section.appendChild(list);
+  const off = gaps.filter(g => excluded.has(g.card));
+  if (off.length) {
+    section.appendChild(el("p", "sub", "除外中（ランキングの計算に入れていません）"));
+    const offList = el("ol", "gap-list");
+    for (const g of off) offList.appendChild(gapRow(g, toggle, true));
+    section.appendChild(offList);
+  }
   return section;
 }
 
@@ -280,6 +313,8 @@ async function load() {
 
   const cardBlocks = [];
   const gaps = [];
+  const excluded = readExcluded();
+  const cardButtons = {};
   ordered.forEach((card, idx) => {
     const ppRows = pp.filter(r => r["カード"] === card).sort((a, b) => a["順位"] - b["順位"]);
     const mcRows = mc.filter(r => r["カード"] === card).sort((a, b) => a["順位"] - b["順位"]);
@@ -296,7 +331,14 @@ async function load() {
     }
     const section = el("section", "card");
     section.id = "card-" + (idx + 1);
-    section.appendChild(el("h2", null, "No." + (idx + 1) + " " + card));
+    const head = el("div", "card-head");
+    head.appendChild(el("h2", null, "No." + (idx + 1) + " " + card));
+    const xbtn = el("button", "exclude-btn", "");
+    xbtn.type = "button";
+    xbtn.addEventListener("click", () => toggleExclude(card));
+    cardButtons[card] = xbtn;
+    head.appendChild(xbtn);
+    section.appendChild(head);
     const grid = el("div", "sites");
     grid.appendChild(siteBlock("PayPayフリマ", "paypay", ppRows, ppMin));
     grid.appendChild(siteBlock("メルカリ", "mercari", mcRows, mcMin));
@@ -311,7 +353,17 @@ async function load() {
   // タブで切り替える（ページは移動しない）：差額ランキング と カード別
   const rankingBox = el("div", null);
   rankingBox.id = "ranking";
-  rankingBox.appendChild(rankingSection(gaps));
+  // 除外の切り替え：ランキングとカード見出しの両方を、その場で作り直す
+  function refreshExclusion() {
+    rankingBox.replaceChildren(rankingSection(gaps, excluded, toggleExclude));
+    for (const [card, btn] of Object.entries(cardButtons)) setExcludeLabel(btn, excluded.has(card));
+  }
+  function toggleExclude(card) {
+    if (excluded.has(card)) excluded.delete(card); else excluded.add(card);
+    writeExcluded(excluded);
+    refreshExclusion();
+  }
+  refreshExclusion();
   const cardsBox = el("div", null);
   cardsBox.id = "card-list";
   cardsBox.hidden = true;

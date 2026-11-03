@@ -214,12 +214,12 @@ function siteBlock(name, cls, rows, cheapest, excluded, toggle) {
     li.appendChild(span);
     const actions = el("div", "actions");
     li.appendChild(actions);
-    if (cls === "mercari" || cls === "snkrdunk") {
+    if (cls === "paypay" || cls === "mercari" || cls === "snkrdunk") {
       // 写真を作る：商品番号を入れた Issue の画面を開く（送信ボタンを押すと処理が始まる）
-      // メルカリは m+商品番号、スニダンは s+商品ID-出品ID（URL の /apparels/商品ID/used/出品ID から作る）
-      const id = cls === "mercari"
-        ? r["URL"].split("/").pop()
-        : "s" + r["URL"].split("/apparels/")[1].replace("/used/", "-");
+      // PayPay は z+商品番号、メルカリは m+商品番号、スニダンは s+商品ID-出品ID（URL の /apparels/商品ID/used/出品ID から作る）
+      const id = cls === "snkrdunk"
+        ? "s" + r["URL"].split("/apparels/")[1].replace("/used/", "-")
+        : r["URL"].split("/").pop();
       const btn = el("a", "photo-btn", "写真を作る");
       btn.href = "https://github.com/shete0804/mercari-photo-test/issues/new?title=" + encodeURIComponent(id);
       btn.target = "_blank";

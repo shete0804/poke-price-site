@@ -41,13 +41,13 @@ h1 { font-size: 22px; margin: 0 0 4px; text-wrap: balance; }
 .site.paypay .site-name { color: var(--paypay); }
 .site.mercari .site-name { color: var(--mercari); }
 ol { list-style: none; margin: 0; padding: 0; }
-li { display: flex; align-items: baseline; gap: 8px; padding: 3px 0; border-top: 1px dashed var(--rule); font-variant-numeric: tabular-nums; }
+li { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px; padding: 3px 0; border-top: 1px dashed var(--rule); font-variant-numeric: tabular-nums; }
 li:first-child { border-top: none; }
 li.excluded { opacity: 0.45; }
 li.excluded .price a { text-decoration: line-through; }
-.rank { color: var(--muted); min-width: 2.6em; font-size: 12px; }
+.rank { color: var(--muted); min-width: 2.6em; font-size: 12px; white-space: nowrap; }
 .thumb { width: 56px; height: 56px; object-fit: cover; border-radius: 6px; flex: none; background: var(--rule); }
-.price { font-weight: 700; }
+.price { font-weight: 700; white-space: nowrap; }
 .price a { color: inherit; text-decoration: none; border-bottom: 1px solid currentColor; }
 .best .price { color: var(--best); }
 .best .price::after { content: " 最安"; font-size: 11px; font-weight: 700; margin-left: 4px; }

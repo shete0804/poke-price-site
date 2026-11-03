@@ -359,7 +359,7 @@ function render() {
     const grid = el("div", "sites");
     grid.appendChild(siteBlock("PayPayフリマ", "paypay", ppRows, ppMin, excluded, toggleListing));
     grid.appendChild(siteBlock("メルカリ", "mercari", mcRows, mcMin, excluded, toggleListing));
-    grid.appendChild(siteBlock("SNKRDUNK（未鑑定・出品中）", "snkrdunk", snRows, snMin, excluded, toggleListing));
+    grid.appendChild(siteBlock("SNKRDUNK", "snkrdunk", snRows, snMin, excluded, toggleListing));
     section.appendChild(grid);
     cardBlocks.push(section);
   });

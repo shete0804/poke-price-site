@@ -34,10 +34,6 @@ h1 { font-size: 22px; margin: 0 0 4px; text-wrap: balance; }
 .dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
 .card { background: var(--paper); border: 1px solid var(--rule); border-radius: 10px; padding: 14px 16px; margin-bottom: 12px; }
 .card h2 { font-size: 16px; margin: 0 0 10px; }
-.card-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin: 0 0 10px; }
-.card-head h2 { margin: 0; }
-.exclude-btn { font: inherit; font-size: 12px; padding: 2px 10px; margin-left: auto; white-space: nowrap; border: 1px solid var(--rule); border-radius: 999px; background: var(--paper); color: var(--muted); cursor: pointer; }
-.exclude-btn[aria-pressed="true"] { border-color: var(--gap); color: var(--gap); }
 .sites { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; min-width: 0; }
 @media (max-width: 560px) { .sites { grid-template-columns: 1fr; gap: 10px; } }
 .site { min-width: 0; }
@@ -47,6 +43,8 @@ h1 { font-size: 22px; margin: 0 0 4px; text-wrap: balance; }
 ol { list-style: none; margin: 0; padding: 0; }
 li { display: flex; align-items: baseline; gap: 8px; padding: 3px 0; border-top: 1px dashed var(--rule); font-variant-numeric: tabular-nums; }
 li:first-child { border-top: none; }
+li.excluded { opacity: 0.45; }
+li.excluded .price a { text-decoration: line-through; }
 .rank { color: var(--muted); min-width: 2.6em; font-size: 12px; }
 .thumb { width: 56px; height: 56px; object-fit: cover; border-radius: 6px; flex: none; background: var(--rule); }
 .price { font-weight: 700; }
@@ -55,6 +53,9 @@ li:first-child { border-top: none; }
 .best .price::after { content: " 最安"; font-size: 11px; font-weight: 700; margin-left: 4px; }
 .empty { color: var(--muted); font-size: 13px; margin: 0; }
 .photo-btn { margin-left: auto; font-size: 12px; padding: 2px 10px; border: 1px solid var(--mercari); color: var(--mercari); border-radius: 999px; text-decoration: none; white-space: nowrap; }
+.exclude-btn { font: inherit; font-size: 12px; padding: 2px 10px; margin-left: auto; white-space: nowrap; border: 1px solid var(--rule); border-radius: 999px; background: var(--paper); color: var(--muted); cursor: pointer; }
+.photo-btn + .exclude-btn { margin-left: 0; }
+.exclude-btn[aria-pressed="true"] { border-color: var(--gap); color: var(--gap); }
 .gap-list { list-style: none; margin: 0; padding: 0; }
 .gap-list li { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; padding: 6px 0; border-top: 1px dashed var(--rule); }
 .gap-list li:first-child { border-top: none; }
@@ -88,6 +89,7 @@ footer { margin-top: 20px; color: var(--muted); font-size: 12px; }
   li { padding: 6px 0; }
   .thumb { width: 64px; height: 64px; }
   .photo-btn { font-size: 14px; padding: 4px 12px; }
+  .exclude-btn { font-size: 14px; padding: 4px 12px; }
   .empty { font-size: 15px; }
   .gap-list li { padding: 10px 0; }
   .gap-diff { min-width: 0; }
@@ -166,7 +168,17 @@ function el(tag, cls, text) {
   return node;
 }
 
-function siteBlock(name, cls, rows, cheapest) {
+// 除外した出品は、出品ごとに URL で覚える。この端末のブラウザに保存する（閉じても残る）
+const EXCLUDE_KEY = "excludedListings";
+function readExcluded() {
+  try { return new Set(JSON.parse(localStorage.getItem(EXCLUDE_KEY) || "[]")); } catch { return new Set(); }
+}
+function writeExcluded(set) {
+  try { localStorage.setItem(EXCLUDE_KEY, JSON.stringify([...set])); } catch { /* 保存できなくても表示は動く */ }
+}
+
+// 出品1件の行。除外中の出品は薄く表示して、もう一度押すと取り消せる（最安値の計算からは外れる）
+function siteBlock(name, cls, rows, cheapest, excluded, toggle) {
   const box = el("div", "site " + cls);
   box.appendChild(el("p", "site-name", name));
   const valid = rows.filter(r => /^\d+$/.test(r["価格"]));
@@ -177,8 +189,10 @@ function siteBlock(name, cls, rows, cheapest) {
   const list = el("ol");
   for (const r of valid) {
     const price = Number(r["価格"]);
+    const off = excluded.has(r["URL"]);
     const li = el("li");
-    if (price === cheapest) li.className = "best";
+    if (off) li.className = "excluded";
+    else if (price === cheapest) li.className = "best";
     if (r["写真"]) {
       const img = el("img");
       img.src = r["写真"];
@@ -209,6 +223,11 @@ function siteBlock(name, cls, rows, cheapest) {
       btn.rel = "noopener noreferrer";
       li.appendChild(btn);
     }
+    const xbtn = el("button", "exclude-btn", off ? "取り消す" : "除外");
+    xbtn.type = "button";
+    xbtn.setAttribute("aria-pressed", String(off));
+    xbtn.addEventListener("click", () => toggle(r["URL"]));
+    li.appendChild(xbtn);
     list.appendChild(li);
   }
   box.appendChild(list);
@@ -223,59 +242,33 @@ function openCard(id) {
   document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
-// 除外の設定は、この端末のブラウザに保存する（閉じても残る）。保存できない環境では、その場の表示だけ変わる
-const EXCLUDE_KEY = "excludedCards";
-function readExcluded() {
-  try { return new Set(JSON.parse(localStorage.getItem(EXCLUDE_KEY) || "[]")); } catch { return new Set(); }
-}
-function writeExcluded(set) {
-  try { localStorage.setItem(EXCLUDE_KEY, JSON.stringify([...set])); } catch { /* 保存できなくても表示は動く */ }
-}
-function setExcludeLabel(btn, off) {
-  btn.textContent = off ? "除外中（取り消す）" : "ランキングから除外";
-  btn.setAttribute("aria-pressed", String(off));
-}
-
-// 差額ランキングの1行。除外中の行には「取り消す」を出す
-function gapRow(g, toggle, off) {
-  const li = el("li");
-  li.appendChild(el("span", "gap-diff", (g.diff >= 0 ? "+" : "−") + yen(Math.abs(g.diff))));
-  const a = el("a", null, g.card);
-  a.href = "#card-" + g.idx;
-  a.addEventListener("click", e => {
-    e.preventDefault();
-    openCard("card-" + g.idx);
-  });
-  li.appendChild(a);
-  li.appendChild(el("span", "gap-detail", "PayPay " + yen(g.ppMin) + " ／ " + g.otherName + " " + yen(g.otherMin)));
-  const btn = el("button", "exclude-btn", off ? "取り消す" : "除外");
-  btn.type = "button";
-  btn.setAttribute("aria-pressed", String(off));
-  btn.addEventListener("click", () => toggle(g.card));
-  li.appendChild(btn);
-  return li;
-}
-
 // 差額ランキング：PayPay の最安から、メルカリ・SNKRDUNK のうち安い方の最安を引いた差（絶対値の円）が大きい順
-// 除外したカードは計算から外し、下の「除外中」にまとめる
-function rankingSection(gaps, excluded, toggle) {
+function rankingSection(gaps) {
   const section = el("section", "card");
   const list = el("ol", "gap-list");
-  for (const g of gaps.filter(g => !excluded.has(g.card))) list.appendChild(gapRow(g, toggle, false));
-  section.appendChild(list);
-  const off = gaps.filter(g => excluded.has(g.card));
-  if (off.length) {
-    section.appendChild(el("p", "sub", "除外中（ランキングの計算に入れていません）"));
-    const offList = el("ol", "gap-list");
-    for (const g of off) offList.appendChild(gapRow(g, toggle, true));
-    section.appendChild(offList);
+  for (const g of gaps) {
+    const li = el("li");
+    li.appendChild(el("span", "gap-diff", (g.diff >= 0 ? "+" : "−") + yen(Math.abs(g.diff))));
+    const a = el("a", null, g.card);
+    a.href = "#card-" + g.idx;
+    a.addEventListener("click", e => {
+      e.preventDefault();
+      openCard("card-" + g.idx);
+    });
+    li.appendChild(a);
+    li.appendChild(el("span", "gap-detail", "PayPay " + yen(g.ppMin) + " ／ " + g.otherName + " " + yen(g.otherMin)));
+    list.appendChild(li);
   }
+  section.appendChild(list);
   return section;
 }
 
 // 表示するカード名は、設定ファイルの名前（検索名）にそろえる（名前の統一）
 const SEARCH_NAME = {};  // 表示名＝検索名＝設定ファイルの名前（対応表は不要）
 
+let data = null;          // 取得した CSV（除外を変えたときに計算し直すため覚えておく）
+let currentTab = "ranking";
+const excluded = readExcluded();
 
 async function load() {
   const [ppText, mcText, snText] = await Promise.all(
@@ -306,6 +299,36 @@ async function load() {
   const held = "ピカチュウex";
   const ordered = names.filter(n => n !== held).concat(names.includes(held) ? [held] : []);
 
+  data = { pp, mc, sn, ordered };
+  render();
+
+  // タブで切り替える（ページは移動しない）：差額ランキング と カード別
+  document.getElementById("tabs").hidden = false;
+  document.querySelectorAll("#tabs .tab").forEach(btn => {
+    btn.onclick = () => {
+      currentTab = btn.dataset.tab;
+      showTab();
+    };
+  });
+}
+
+// 除外中の出品を外して、最安値・差額・ランキングを計算し直す
+function toggleListing(url) {
+  if (excluded.has(url)) excluded.delete(url); else excluded.add(url);
+  writeExcluded(excluded);
+  render();
+}
+
+function showTab() {
+  const isRanking = currentTab === "ranking";
+  document.getElementById("ranking").hidden = !isRanking;
+  document.getElementById("card-list").hidden = isRanking;
+  document.querySelectorAll("#tabs .tab").forEach(b => b.setAttribute("aria-selected", String(b.dataset.tab === currentTab)));
+}
+
+function render() {
+  const { pp, mc, sn, ordered } = data;
+  const live = rows => rows.filter(r => !excluded.has(r["URL"]));
   const best = rows => {
     const nums = rows.map(r => r["価格"]).filter(v => /^\d+$/.test(v)).map(Number);
     return nums.length ? Math.min(...nums) : null;
@@ -313,15 +336,13 @@ async function load() {
 
   const cardBlocks = [];
   const gaps = [];
-  const excluded = readExcluded();
-  const cardButtons = {};
   ordered.forEach((card, idx) => {
     const ppRows = pp.filter(r => r["カード"] === card).sort((a, b) => a["順位"] - b["順位"]);
     const mcRows = mc.filter(r => r["カード"] === card).sort((a, b) => a["順位"] - b["順位"]);
     const snRows = sn.filter(r => r["カード"] === card).sort((a, b) => a["順位"] - b["順位"]);
-    const ppMin = best(ppRows);
-    const mcMin = best(mcRows);
-    const snMin = best(snRows);
+    const ppMin = best(live(ppRows));
+    const mcMin = best(live(mcRows));
+    const snMin = best(live(snRows));
     // 比べる相手は メルカリ と SNKRDUNK のうち、最安値が安い方（差額 = PayPay の最安 − その最安、符号つき）
     const others = [{ name: "メルカリ", min: mcMin }, { name: "SNKRDUNK", min: snMin }]
       .filter(o => o.min !== null);
@@ -331,18 +352,11 @@ async function load() {
     }
     const section = el("section", "card");
     section.id = "card-" + (idx + 1);
-    const head = el("div", "card-head");
-    head.appendChild(el("h2", null, "No." + (idx + 1) + " " + card));
-    const xbtn = el("button", "exclude-btn", "");
-    xbtn.type = "button";
-    xbtn.addEventListener("click", () => toggleExclude(card));
-    cardButtons[card] = xbtn;
-    head.appendChild(xbtn);
-    section.appendChild(head);
+    section.appendChild(el("h2", null, "No." + (idx + 1) + " " + card));
     const grid = el("div", "sites");
-    grid.appendChild(siteBlock("PayPayフリマ", "paypay", ppRows, ppMin));
-    grid.appendChild(siteBlock("メルカリ", "mercari", mcRows, mcMin));
-    grid.appendChild(siteBlock("SNKRDUNK（未鑑定・出品中）", "snkrdunk", snRows, snMin));
+    grid.appendChild(siteBlock("PayPayフリマ", "paypay", ppRows, ppMin, excluded, toggleListing));
+    grid.appendChild(siteBlock("メルカリ", "mercari", mcRows, mcMin, excluded, toggleListing));
+    grid.appendChild(siteBlock("SNKRDUNK（未鑑定・出品中）", "snkrdunk", snRows, snMin, excluded, toggleListing));
     section.appendChild(grid);
     cardBlocks.push(section);
   });
@@ -350,39 +364,18 @@ async function load() {
   // 差額の大きい順（プラスの大きい差額が上、マイナスは下へ）
   gaps.sort((a, b) => b.diff - a.diff);
 
-  // タブで切り替える（ページは移動しない）：差額ランキング と カード別
   const rankingBox = el("div", null);
   rankingBox.id = "ranking";
-  // 除外の切り替え：ランキングとカード見出しの両方を、その場で作り直す
-  function refreshExclusion() {
-    rankingBox.replaceChildren(rankingSection(gaps, excluded, toggleExclude));
-    for (const [card, btn] of Object.entries(cardButtons)) setExcludeLabel(btn, excluded.has(card));
-  }
-  function toggleExclude(card) {
-    if (excluded.has(card)) excluded.delete(card); else excluded.add(card);
-    writeExcluded(excluded);
-    refreshExclusion();
-  }
-  refreshExclusion();
+  rankingBox.appendChild(rankingSection(gaps));
   const cardsBox = el("div", null);
   cardsBox.id = "card-list";
-  cardsBox.hidden = true;
   cardBlocks.forEach(s => cardsBox.appendChild(s));
 
   const updated = (pp[0]?.["更新"] ?? "") + "（PayPay） / " + (mc[0]?.["更新"] ?? "") + "（メルカリ）";
   document.getElementById("updated").textContent = "結果の更新：" + updated + "。開いた時点で最新の CSV を読んでいます。";
 
-  const root = document.getElementById("cards");
-  root.replaceChildren(rankingBox, cardsBox);
-  document.getElementById("tabs").hidden = false;
-  document.querySelectorAll("#tabs .tab").forEach(btn => {
-    btn.addEventListener("click", () => {
-      const isRanking = btn.dataset.tab === "ranking";
-      rankingBox.hidden = !isRanking;
-      cardsBox.hidden = isRanking;
-      document.querySelectorAll("#tabs .tab").forEach(b => b.setAttribute("aria-selected", String(b === btn)));
-    });
-  });
+  document.getElementById("cards").replaceChildren(rankingBox, cardsBox);
+  showTab();
 }
 
 function showError(err) {

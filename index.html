@@ -311,6 +311,8 @@ async function load() {
     btn.onclick = () => {
       currentTab = btn.dataset.tab;
       showTab();
+      // 差額ランキングに切り替えたら、一番上から見せる
+      if (currentTab === "ranking") window.scrollTo(0, 0);
     };
   });
 }

@@ -249,9 +249,10 @@ function openCard(id) {
 function rankingSection(gaps) {
   const section = el("section", "card");
   const list = el("ol", "gap-list");
-  for (const g of gaps) {
+  gaps.forEach((g, i) => {
     const li = el("li");
-    li.appendChild(el("span", "gap-diff", (g.diff >= 0 ? "+" : "−") + yen(Math.abs(g.diff))));
+    li.appendChild(el("span", "gap-rank", (i + 1) + "位"));
+    li.appendChild(el("span", "gap-diff",(g.diff >= 0 ? "+" : "−") + yen(Math.abs(g.diff))));
     const a = el("a", null, g.card);
     a.href = "#card-" + g.idx;
     a.addEventListener("click", e => {
@@ -261,49 +262,12 @@ function rankingSection(gaps) {
     li.appendChild(a);
     li.appendChild(el("span", "gap-detail", "PayPay " + yen(g.ppMin) + " ／ " + g.otherName + " " + yen(g.otherMin)));
     list.appendChild(li);
-  }
+  });
   section.appendChild(list);
   return section;
 }
 
-// 表示するカード名は、設定ファイルの名前（検索名）にそろえる（名前の統一）
-// CSV の名前（表示名）→ 検索語の1つ目。「ピカチュウ」は3枚とも同じ語になるので対象外
-const SEARCH_NAME = {
-  "青ミュウ RGB": "ミュウ B RGB",
-  "赤ミュウ RGB": "ミュウ R RGB",
-  "緑ミュウ RGB": "ミュウ G RGB",
-  "メガリザードンXex SAR インフェルノX": "メガリザードンX SAR",
-  "メガリザードンYex MUR": "メガリザードンY ex MUR",
-  "メガリザードンXex MUR": "メガリザードンX MUR",
-  "メガレックウザex MUR ストームエメラルダ": "メガレックウザ MUR",
-  "かんこうきゃく": "かんこうきゃく SR",
-  "ピカチュウ&ゼクロムGX": "ピカチュウ&ゼクロムGX SA",
-  "ブラッキー&ダークライGX": "ブラッキー&ダークライGX SA",
-  "ミュウex 347/190": "ミュウex SAR シャイニートレジャーex",
-  "ゼクロムex": "ゼクロムex BWR",
-  "レシラムex": "レシラムex BWR",
-  "グレイシアVMAX": "グレイシアVMAX SA",
-  "ルチア": "ルチア SR",
-  "ピカチュウex 764/742": "ピカチュウex SAR",
-  "レックウザV": "レックウザV SR",
-  "ピカチュウVMAX": "ピカチュウVMAX HR",
-  "モクロー ムンク": "モクロー 290/SM-P",
-  "ルザミーネ": "ルザミーネ SR",
-  "リザードン 25th": "リザードン",
-  "レックウザGX": "レックウザGX SSR",
-  "ミュウツーGX": "ミュウツーGX SR",
-  "サナ": "サナ SR",
-  "エリカのおもてなし": "エリカのおもてなし SR",
-  "こくばバドレックスVMAX": "こくばバドレックスVMAX HR",
-  "バシャーモVMAX": "バシャーモVMAX SA",
-  "カイリューV": "カイリューV SR",
-  "シロナ": "シロナ SR",
-  "シロナのガブリアスex": "シロナのガブリアスex SAR",
-  "ナンジャモ SAR": "ナンジャモ",
-  "ブースターEX": "ブースターEX RR 007/032",
-  "ブラッキーGX": "ブラッキーGX SSR",
-  "MサーナイトEX": "MサーナイトEX RR",
-};
+// 表示するカード名は、CSV に入っている名前（設定ファイルの name）をそのまま使う。検索語とは分けない
 
 let data = null;          // 取得した CSV（除外を変えたときに計算し直すため覚えておく）
 let currentTab = "ranking";
@@ -328,7 +292,6 @@ async function load() {
   for (const r of mc) display[keyOf(r["カード"])] ??= r["カード"];
   for (const r of sn) display[keyOf(r["カード"])] ??= r["カード"];
   for (const r of all) r["カード"] = display[keyOf(r["カード"])];
-  for (const r of all) r["カード"] = SEARCH_NAME[r["カード"]] ?? r["カード"];
 
   // カードの並びは PayPay の順（番号順）。メルカリだけにあるものは後ろに足す。ピカチュウは一番下
   const names = [];

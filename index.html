@@ -40,6 +40,8 @@ h1 { font-size: 22px; margin: 0 0 4px; text-wrap: balance; }
 .site-name { font-size: 12px; font-weight: 700; letter-spacing: 0.04em; margin: 0 0 4px; }
 .site.paypay .site-name { color: var(--paypay); }
 .site.mercari .site-name { color: var(--mercari); }
+.site-link { color: inherit; text-decoration: none; border-bottom: 1px solid currentColor; }
+.site-link::after { content: " ↗"; font-weight: 400; }
 ol { list-style: none; margin: 0; padding: 0; }
 li { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px; padding: 3px 0; border-top: 1px dashed var(--rule); font-variant-numeric: tabular-nums; }
 li:first-child { border-top: none; }
@@ -204,9 +206,20 @@ function writeChecked(map) {
 }
 
 // 出品1件の行。除外中の出品は薄く表示して、もう一度押すと取り消せる（最安値の計算からは外れる）
-function siteBlock(name, cls, rows, cheapest, excluded, toggle) {
+function siteBlock(name, cls, rows, cheapest, excluded, toggle, link) {
   const box = el("div", "site " + cls);
-  box.appendChild(el("p", "site-name", name));
+  // サイト名の文字は、出品の有る無しに関係なく、常にリンクにする（PayPay・メルカリ＝1個目の検索語と下限の検索ページ、SNKRDUNK＝カードのトップページ）
+  const head = el("p", "site-name");
+  if (link) {
+    const a = el("a", "site-link", name);
+    a.href = link;
+    a.target = "_blank";
+    a.rel = "noopener noreferrer";
+    head.appendChild(a);
+  } else {
+    head.textContent = name;
+  }
+  box.appendChild(head);
   const valid = rows.filter(r => /^\d+$/.test(r["価格"]));
   if (valid.length === 0) {
     box.appendChild(el("p", "empty", rows.length ? rows[0]["価格"] : "該当なし"));
@@ -303,6 +316,11 @@ function rankingSection(gaps) {
 
 // 表示するカード名は、CSV に入っている名前（設定ファイルの name）をそのまま使う。検索語とは分けない
 
+// カード名の比べ方：全角・半角の違いや空白、大文字小文字を無視する（リンクの表のキーも同じ方法で作る）
+const keyOf = s => s.replace(/＆/g, "&").replace(/[\s　]/g, "").toLowerCase();
+let links = {};           // カードごとの検索ページ・商品ページのリンク（results/links.json。読めなくても表示は動く）
+const LINKS_URL = "https://raw.githubusercontent.com/shete0804/poke-price-site/main/results/links.json";
+
 let data = null;          // 取得した CSV（除外を変えたときに計算し直すため覚えておく）
 let currentTab = "ranking";
 const excluded = readExcluded();
@@ -331,6 +349,10 @@ async function load() {
       return r.text();
     }))
   );
+  try {
+    const res = await fetch(LINKS_URL, { cache: "no-store" });
+    if (res.ok) links = await res.json();
+  } catch { /* リンクの表が読めなくても、出品の表示は動く（サイト名は普通の文字になる） */ }
   const pp = parseCsv(ppText);
   const mc = parseCsv(mcText);
   const sn = parseCsv(snText);
@@ -338,7 +360,6 @@ async function load() {
   if (pp.length && mc.length && sn.length) refreshChecked(all);
 
   // カード名の統一：全角・半角の違いや空白を無視して同じカードとみなし、表示は PayPay の名前にそろえる
-  const keyOf = s => s.replace(/＆/g, "&").replace(/[\s　]/g, "").toLowerCase();
   const display = {};
   for (const r of pp) display[keyOf(r["カード"])] ??= r["カード"];
   for (const r of mc) display[keyOf(r["カード"])] ??= r["カード"];
@@ -419,9 +440,10 @@ function render() {
     section.id = "card-" + (idx + 1);
     section.appendChild(el("h2", null, "No." + (idx + 1) + " " + card));
     const grid = el("div", "sites");
-    grid.appendChild(siteBlock("PayPayフリマ", "paypay", ppRows, ppMin, excluded, toggleListing));
-    grid.appendChild(siteBlock("メルカリ", "mercari", mcRows, mcMin, excluded, toggleListing));
-    grid.appendChild(siteBlock("SNKRDUNK", "snkrdunk", snRows, snMin, excluded, toggleListing));
+    const lk = links[keyOf(card)] || {};
+    grid.appendChild(siteBlock("PayPayフリマ", "paypay", ppRows, ppMin, excluded, toggleListing, lk.paypay));
+    grid.appendChild(siteBlock("メルカリ", "mercari", mcRows, mcMin, excluded, toggleListing, lk.mercari));
+    grid.appendChild(siteBlock("SNKRDUNK", "snkrdunk", snRows, snMin, excluded, toggleListing, lk.snkrdunk));
     section.appendChild(grid);
     cardBlocks.push(section);
   });

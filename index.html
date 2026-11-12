@@ -1,4 +1,4 @@
-﻿<!doctype html>
+<!doctype html>
 <html lang="ja">
 <head>
 <meta charset="utf-8">
@@ -126,6 +126,7 @@ footer { margin-top: 20px; color: var(--muted); font-size: 12px; }
   </form>
   <div id="cards" hidden><p class="empty">結果を読み込んでいます…</p></div>
   <footer id="updated" hidden></footer>
+  <footer id="sync" hidden></footer>
 </main>
 <script>
 // 開いたら必ず一番上から表示する（前回のスクロール位置は覚えない）
@@ -322,6 +323,7 @@ function rankingSection(gaps) {
     rb.addEventListener("click", () => {
       if (rankChecked.has(rk)) rankChecked.delete(rk); else rankChecked.add(rk);
       writeRankChecked(rankChecked);
+      pushShared("rank", rk, rankChecked.has(rk));
       rb.setAttribute("aria-pressed", String(rankChecked.has(rk)));
       li.classList.toggle("rank-checked", rankChecked.has(rk));
     });
@@ -354,6 +356,96 @@ let currentTab = "ranking";
 const excluded = readExcluded();
 const checked = readChecked();
 
+// ---- 端末をまたいだ共有（除外・チェック・ランキングのチェック）----
+// 共有の保存場所は、このリポジトリの state ブランチの results/state.json。GitHub のトークン（この端末だけに保存）で読み書きする。
+// トークンがない端末は、今までどおりこの端末だけに保存する。
+const TOKEN_KEY = "ghToken";
+const STATE_API = "https://api.github.com/repos/shete0804/poke-price-site/contents/results/state.json";
+const STATE_BRANCH = "state";
+function getToken() { try { return localStorage.getItem(TOKEN_KEY) || ""; } catch { return ""; } }
+function b64enc(s) { let bin = ""; for (const b of new TextEncoder().encode(s)) bin += String.fromCharCode(b); return btoa(bin); }
+function b64dec(s) { return new TextDecoder().decode(Uint8Array.from(atob(s.replace(/\n/g, "")), c => c.charCodeAt(0))); }
+function setSyncText(text, bad) {
+  const f = document.getElementById("sync");
+  f.hidden = false;
+  f.textContent = text + " ";
+  const a = el("a", null, getToken() ? "［共有を解除］" : "［この端末を共有につなぐ］");
+  a.href = "#";
+  a.style.color = bad ? "var(--gap)" : "inherit";
+  a.addEventListener("click", e => {
+    e.preventDefault();
+    if (getToken()) {
+      if (confirm("この端末の共有を解除します（保存した除外・チェックはこの端末に残ります）。")) { try { localStorage.removeItem(TOKEN_KEY); } catch {} location.reload(); }
+    } else {
+      const t = prompt("GitHub のトークンを貼ってください（この端末のブラウザにだけ保存します）");
+      if (t && t.trim()) { try { localStorage.setItem(TOKEN_KEY, t.trim()); } catch {} location.reload(); }
+    }
+  });
+  f.appendChild(a);
+}
+async function ghGetState() {
+  const r = await fetch(`${STATE_API}?ref=${STATE_BRANCH}&t=${Date.now()}`, {
+    headers: { Authorization: "Bearer " + getToken(), Accept: "application/vnd.github+json" }, cache: "no-store",
+  });
+  if (r.status === 404) return null;
+  if (!r.ok) throw new Error("読み込み " + r.status);
+  const j = await r.json();
+  return { sha: j.sha, state: JSON.parse(b64dec(j.content)) };
+}
+async function ghPutState(state, sha) {
+  return fetch(STATE_API, {
+    method: "PUT",
+    headers: { Authorization: "Bearer " + getToken(), Accept: "application/vnd.github+json", "Content-Type": "application/json" },
+    body: JSON.stringify({ message: "chore: update shared state", content: b64enc(JSON.stringify(state)), branch: STATE_BRANCH, ...(sha ? { sha } : {}) }),
+  });
+}
+function currentState() {
+  return { excluded: [...excluded], checked: Object.fromEntries(checked), rankChecked: [...rankChecked] };
+}
+function applyState(st) {
+  excluded.clear(); (st.excluded || []).forEach(u => excluded.add(u));
+  checked.clear(); Object.entries(st.checked || {}).forEach(([u, t]) => checked.set(u, t));
+  rankChecked.clear(); (st.rankChecked || []).forEach(k => rankChecked.add(k));
+  writeExcluded(excluded); writeChecked(checked); writeRankChecked(rankChecked);
+}
+// 共有の状態を読む。共有に何もなければ、この端末の保存を共有に上げる（初回のつなぎ）
+async function pullShared() {
+  if (!getToken()) { setSyncText("この端末の中だけに保存しています。"); return; }
+  try {
+    const cur = await ghGetState();
+    const empty = !cur || (!(cur.state.excluded || []).length && !Object.keys(cur.state.checked || {}).length && !(cur.state.rankChecked || []).length);
+    if (empty && (excluded.size || checked.size || rankChecked.size)) {
+      const res = await ghPutState(currentState(), cur?.sha);
+      if (!res.ok) throw new Error("書き込み " + res.status);
+    } else if (cur) {
+      applyState(cur.state);
+    }
+    setSyncText("除外・チェックは、トークンをつないだ端末で共通です。");
+  } catch (e) {
+    setSyncText("共有を読めませんでした（" + e.message + "）。この端末の保存を使っています。", true);
+  }
+}
+// 1つの操作を共有に反映する（読み直して、その1件だけ書き換えて上げる。他の端末の操作とぶつかったらやり直す）
+async function pushShared(kind, key, on) {
+  if (!getToken()) return;
+  try {
+    for (let i = 0; i < 4; i++) {
+      const cur = await ghGetState();
+      const st = cur ? cur.state : { excluded: [], checked: {}, rankChecked: [] };
+      st.excluded ||= []; st.checked ||= {}; st.rankChecked ||= [];
+      if (kind === "excluded") { const s = new Set(st.excluded); on ? s.add(key) : s.delete(key); st.excluded = [...s]; }
+      else if (kind === "checked") { if (on) st.checked[key] = Date.now(); else delete st.checked[key]; }
+      else { const s = new Set(st.rankChecked); on ? s.add(key) : s.delete(key); st.rankChecked = [...s]; }
+      const res = await ghPutState(st, cur?.sha);
+      if (res.ok) { setSyncText("共有に保存しました。"); return; }
+      if (res.status !== 409 && res.status !== 422) throw new Error("書き込み " + res.status);
+    }
+    throw new Error("他の端末と重なりました");
+  } catch (e) {
+    setSyncText("共有に保存できませんでした（" + e.message + "）。この端末にだけ保存しています。", true);
+  }
+}
+
 // 一覧に見えた出品は「最後に見えた時刻」を更新し、45日以上見えないチェックだけを消す（3つの CSV を全部読めたときだけ）
 function refreshChecked(allRows) {
   const present = new Set(allRows.map(r => r["URL"]).filter(Boolean));
@@ -362,7 +454,7 @@ function refreshChecked(allRows) {
   let changed = false;
   for (const [url, seen] of [...checked]) {
     if (present.has(url)) {
-      if (now - Number(seen) > 3600 * 1000) { checked.set(url, now); changed = true; }
+      if (now - Number(seen) > 24 * 3600 * 1000) { checked.set(url, now); changed = true; }
     } else if (now - Number(seen) > limit) {
       checked.delete(url); changed = true;
     }
@@ -381,6 +473,7 @@ async function load() {
     const res = await fetch(LINKS_URL, { cache: "no-store" });
     if (res.ok) links = await res.json();
   } catch { /* リンクの表が読めなくても、出品の表示は動く（サイト名は普通の文字になる） */ }
+  await pullShared(); // 他の端末の除外・チェックを取り込む（トークンがなければ、この端末の保存のまま）
   const pp = parseCsv(ppText);
   const mc = parseCsv(mcText);
   const sn = parseCsv(snText);
@@ -421,6 +514,7 @@ async function load() {
 function toggleListing(url) {
   if (excluded.has(url)) excluded.delete(url); else excluded.add(url);
   writeExcluded(excluded);
+  pushShared("excluded", url, excluded.has(url));
   render();
 }
 
@@ -428,6 +522,7 @@ function toggleListing(url) {
 function toggleCheck(url) {
   if (checked.has(url)) checked.delete(url); else checked.set(url, Date.now());
   writeChecked(checked);
+  pushShared("checked", url, checked.has(url));
   const top = window.scrollY;
   render();
   window.scrollTo(0, top);

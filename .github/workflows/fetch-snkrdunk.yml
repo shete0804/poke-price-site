@@ -30,11 +30,17 @@ jobs:
       - name: Fetch SNKRDUNK prices
         run: python scripts/fetch_snkrdunk.py
 
+      # サイトの「PayPayフリマ」「メルカリ」「SNKRDUNK」の文字に付けるリンク（下限や検索語が変わるので毎時作り直す）。失敗しても取得は止めない
+      - name: Make site links
+        continue-on-error: true
+        run: python scripts/make_links.py
+
       - name: Commit results
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add results/snkrdunk_latest.csv
+          if [ -f results/links.json ]; then git add results/links.json; fi
           if git diff --cached --quiet; then
             echo "CSV に変更なし"
           else

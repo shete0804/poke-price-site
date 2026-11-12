@@ -183,12 +183,24 @@ function writeExcluded(set) {
 }
 
 // チェックした出品も、URL で覚える（除外とは別。チェックしても最安値の計算には影響しない）
+// 保存は「URL → 最後に一覧で見えた時刻」。CSV には各サイト上位5件しか載らないので、一覧に無い＝売り切れ、とは言えない
+// （もっと安い出品が増えて6位以下に落ちただけかもしれない）。だから一覧から外れてもチェックは残し、
+// 45日以上一覧に見えなかったものだけを掃除する（売り切れた出品は、その頃には確実に消えている）
 const CHECK_KEY = "checkedListings";
+const CHECK_KEEP_DAYS = 45;
 function readChecked() {
-  try { return new Set(JSON.parse(localStorage.getItem(CHECK_KEY) || "[]")); } catch { return new Set(); }
+  try {
+    const v = JSON.parse(localStorage.getItem(CHECK_KEY) || "{}");
+    if (Array.isArray(v)) { // 前の保存形式（URL の配列）からの引き継ぎ：今の時刻を入れて、新しい形式で保存し直す
+      const migrated = new Map(v.map(url => [url, Date.now()]));
+      writeChecked(migrated);
+      return migrated;
+    }
+    return new Map(Object.entries(v));
+  } catch { return new Map(); }
 }
-function writeChecked(set) {
-  try { localStorage.setItem(CHECK_KEY, JSON.stringify([...set])); } catch { /* 保存できなくても表示は動く */ }
+function writeChecked(map) {
+  try { localStorage.setItem(CHECK_KEY, JSON.stringify(Object.fromEntries(map))); } catch { /* 保存できなくても表示は動く */ }
 }
 
 // 出品1件の行。除外中の出品は薄く表示して、もう一度押すと取り消せる（最安値の計算からは外れる）
@@ -296,12 +308,18 @@ let currentTab = "ranking";
 const excluded = readExcluded();
 const checked = readChecked();
 
-// 売り切れて、どのサイトの一覧からも無くなった出品のチェックは消す（3つの CSV を全部読めたときだけ）
-function pruneChecked(allRows) {
+// 一覧に見えた出品は「最後に見えた時刻」を更新し、45日以上見えないチェックだけを消す（3つの CSV を全部読めたときだけ）
+function refreshChecked(allRows) {
   const present = new Set(allRows.map(r => r["URL"]).filter(Boolean));
+  const now = Date.now();
+  const limit = CHECK_KEEP_DAYS * 24 * 3600 * 1000;
   let changed = false;
-  for (const url of [...checked]) {
-    if (!present.has(url)) { checked.delete(url); changed = true; }
+  for (const [url, seen] of [...checked]) {
+    if (present.has(url)) {
+      if (now - Number(seen) > 3600 * 1000) { checked.set(url, now); changed = true; }
+    } else if (now - Number(seen) > limit) {
+      checked.delete(url); changed = true;
+    }
   }
   if (changed) writeChecked(checked);
 }
@@ -317,7 +335,7 @@ async function load() {
   const mc = parseCsv(mcText);
   const sn = parseCsv(snText);
   const all = [...pp, ...mc, ...sn];
-  if (pp.length && mc.length && sn.length) pruneChecked(all);
+  if (pp.length && mc.length && sn.length) refreshChecked(all);
 
   // カード名の統一：全角・半角の違いや空白を無視して同じカードとみなし、表示は PayPay の名前にそろえる
   const keyOf = s => s.replace(/＆/g, "&").replace(/[\s　]/g, "").toLowerCase();
@@ -359,7 +377,7 @@ function toggleListing(url) {
 
 // チェックを付ける・外す（最安値や順位は変わらないので、再計算せず表示だけ作り直す）
 function toggleCheck(url) {
-  if (checked.has(url)) checked.delete(url); else checked.add(url);
+  if (checked.has(url)) checked.delete(url); else checked.set(url, Date.now());
   writeChecked(checked);
   const top = window.scrollY;
   render();

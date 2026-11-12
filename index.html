@@ -57,6 +57,10 @@ li.excluded .price a { text-decoration: line-through; }
 .photo-btn { font-size: 12px; padding: 2px 10px; border: 1px solid var(--mercari); color: var(--mercari); border-radius: 999px; text-decoration: none; white-space: nowrap; }
 .exclude-btn { font: inherit; font-size: 12px; padding: 2px 10px; white-space: nowrap; border: 1px solid var(--rule); border-radius: 999px; background: var(--paper); color: var(--muted); cursor: pointer; }
 .exclude-btn[aria-pressed="true"] { border-color: var(--gap); color: var(--gap); }
+/* チェック：確認した出品の目印（押すたびに付く・外れる）。売り切れて一覧から消えると、自動で消える */
+.check-btn { font: inherit; font-size: 12px; padding: 2px 10px; white-space: nowrap; border: 1px solid var(--rule); border-radius: 999px; background: var(--paper); color: var(--muted); cursor: pointer; }
+.check-btn[aria-pressed="true"] { border-color: var(--best); background: var(--best); color: var(--paper); font-weight: 700; }
+li.checked { box-shadow: inset 3px 0 0 var(--best); padding-left: 8px; }
 .gap-list { list-style: none; margin: 0; padding: 0; }
 .gap-list li { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; padding: 6px 0; border-top: 1px dashed var(--rule); }
 .gap-list li:first-child { border-top: none; }
@@ -90,7 +94,7 @@ footer { margin-top: 20px; color: var(--muted); font-size: 12px; }
   li { padding: 6px 0; }
   .thumb { width: 56px; height: 56px; }
   .actions { flex: none; flex-direction: column; align-items: flex-end; align-self: flex-start; gap: 4px; margin-left: auto; }
-  .photo-btn, .exclude-btn { font-size: 11px; padding: 2px 8px; }
+  .photo-btn, .exclude-btn, .check-btn { font-size: 11px; padding: 2px 8px; }
   .empty { font-size: 15px; }
   .gap-list li { padding: 10px 0; }
   .gap-diff { min-width: 0; }
@@ -178,6 +182,15 @@ function writeExcluded(set) {
   try { localStorage.setItem(EXCLUDE_KEY, JSON.stringify([...set])); } catch { /* 保存できなくても表示は動く */ }
 }
 
+// チェックした出品も、URL で覚える（除外とは別。チェックしても最安値の計算には影響しない）
+const CHECK_KEY = "checkedListings";
+function readChecked() {
+  try { return new Set(JSON.parse(localStorage.getItem(CHECK_KEY) || "[]")); } catch { return new Set(); }
+}
+function writeChecked(set) {
+  try { localStorage.setItem(CHECK_KEY, JSON.stringify([...set])); } catch { /* 保存できなくても表示は動く */ }
+}
+
 // 出品1件の行。除外中の出品は薄く表示して、もう一度押すと取り消せる（最安値の計算からは外れる）
 function siteBlock(name, cls, rows, cheapest, excluded, toggle) {
   const box = el("div", "site " + cls);
@@ -192,8 +205,12 @@ function siteBlock(name, cls, rows, cheapest, excluded, toggle) {
     const price = Number(r["価格"]);
     const off = excluded.has(r["URL"]);
     const li = el("li");
-    if (off) li.className = "excluded";
-    else if (price === cheapest) li.className = "best";
+    const isChecked = checked.has(r["URL"]);
+    const classes = [];
+    if (off) classes.push("excluded");
+    else if (price === cheapest) classes.push("best");
+    if (isChecked) classes.push("checked");
+    if (classes.length) li.className = classes.join(" ");
     if (r["写真"]) {
       const img = el("img");
       img.src = r["写真"];
@@ -226,6 +243,11 @@ function siteBlock(name, cls, rows, cheapest, excluded, toggle) {
       btn.rel = "noopener noreferrer";
       actions.appendChild(btn);
     }
+    const cbtn = el("button", "check-btn", isChecked ? "✓ チェック済み" : "チェック");
+    cbtn.type = "button";
+    cbtn.setAttribute("aria-pressed", String(isChecked));
+    cbtn.addEventListener("click", () => toggleCheck(r["URL"]));
+    actions.appendChild(cbtn);
     const xbtn = el("button", "exclude-btn", off ? "取り消す" : "除外");
     xbtn.type = "button";
     xbtn.setAttribute("aria-pressed", String(off));
@@ -272,6 +294,17 @@ function rankingSection(gaps) {
 let data = null;          // 取得した CSV（除外を変えたときに計算し直すため覚えておく）
 let currentTab = "ranking";
 const excluded = readExcluded();
+const checked = readChecked();
+
+// 売り切れて、どのサイトの一覧からも無くなった出品のチェックは消す（3つの CSV を全部読めたときだけ）
+function pruneChecked(allRows) {
+  const present = new Set(allRows.map(r => r["URL"]).filter(Boolean));
+  let changed = false;
+  for (const url of [...checked]) {
+    if (!present.has(url)) { checked.delete(url); changed = true; }
+  }
+  if (changed) writeChecked(checked);
+}
 
 async function load() {
   const [ppText, mcText, snText] = await Promise.all(
@@ -284,6 +317,7 @@ async function load() {
   const mc = parseCsv(mcText);
   const sn = parseCsv(snText);
   const all = [...pp, ...mc, ...sn];
+  if (pp.length && mc.length && sn.length) pruneChecked(all);
 
   // カード名の統一：全角・半角の違いや空白を無視して同じカードとみなし、表示は PayPay の名前にそろえる
   const keyOf = s => s.replace(/＆/g, "&").replace(/[\s　]/g, "").toLowerCase();
@@ -321,6 +355,15 @@ function toggleListing(url) {
   if (excluded.has(url)) excluded.delete(url); else excluded.add(url);
   writeExcluded(excluded);
   render();
+}
+
+// チェックを付ける・外す（最安値や順位は変わらないので、再計算せず表示だけ作り直す）
+function toggleCheck(url) {
+  if (checked.has(url)) checked.delete(url); else checked.add(url);
+  writeChecked(checked);
+  const top = window.scrollY;
+  render();
+  window.scrollTo(0, top);
 }
 
 function showTab() {

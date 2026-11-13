@@ -311,6 +311,15 @@ function openCard(id) {
   document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
+// カード別の「No.○」をタップしたとき：差額ランキングに切り替えて、そのカードの行まで移動する
+// （絞り込み中で行が隠れているときは、絞り込みを外してから移動する）
+function openRank(idx) {
+  const row = () => document.getElementById("rank-" + idx);
+  if (!row()) { rankOnlyChecked = false; render(); }
+  document.querySelector('#tabs .tab[data-tab="ranking"]').click();
+  row()?.scrollIntoView({ behavior: "smooth", block: "center" });
+}
+
 // 差額ランキング：PayPay の最安から、メルカリ・SNKRDUNK のうち安い方の最安を引いた差（絶対値の円）が大きい順
 let rankOnlyChecked = false;   // ✓ を付けたカードだけ表示（見た目の絞り込み。保存はしない）
 function rankingSection(gaps) {
@@ -326,6 +335,7 @@ function rankingSection(gaps) {
   gaps.forEach((g, i) => {
     if (rankOnlyChecked && !rankChecked.has(keyOf(g.card))) return;
     const li = el("li");
+    li.id = "rank-" + g.idx;
     const rk = keyOf(g.card);
     const on = rankChecked.has(rk);
     if (on) li.className = "rank-checked";
@@ -591,7 +601,10 @@ function render() {
     }
     const section = el("section", "card");
     section.id = "card-" + (idx + 1);
-    section.appendChild(el("h2", null, "No." + (idx + 1) + " " + card));
+    const h2 = el("h2", "card-title-link", "No." + (idx + 1) + " " + card);
+    h2.title = "ランキングのこのカードへ";
+    h2.addEventListener("click", () => openRank(idx + 1));
+    section.appendChild(h2);
     const grid = el("div", "sites");
     const lk = links[keyOf(card)] || {};
     grid.appendChild(siteBlock("PayPayフリマ", "paypay", ppRows, ppMin, excluded, toggleListing, lk.paypay));

@@ -76,6 +76,10 @@ li.checked { box-shadow: inset 3px 0 0 var(--best); padding-left: 8px; }
 .tab { font: inherit; padding: 6px 14px; border: 1px solid var(--rule); border-radius: 999px; background: var(--paper); color: var(--ink); cursor: pointer; }
 .updated-top { margin: 0 0 8px; font-size: 13px; color: var(--muted); }
 .card-title-link { cursor: pointer; }
+.memo { flex: 1 1 100%; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; font-size: 12px; color: var(--muted); }
+.memo-text { color: var(--ink); overflow-wrap: anywhere; }
+.memo-btn { font: inherit; font-size: 11px; padding: 1px 8px; border: 1px solid var(--rule); border-radius: 999px; background: var(--paper); color: var(--muted); cursor: pointer; }
+.memo-input { font: inherit; font-size: 12px; flex: 1 1 160px; min-width: 0; padding: 2px 6px; border: 1px solid var(--rule); border-radius: 6px; background: var(--paper); color: var(--ink); }
 .card-title-link:hover { text-decoration: underline; }
 .rank-filter { margin: 0 0 10px; }
 .rank-filter button { font: inherit; font-size: 13px; padding: 4px 12px; border: 1px solid var(--rule); border-radius: 999px; background: var(--paper); color: var(--ink); cursor: pointer; }
@@ -226,6 +230,44 @@ function writeRankChecked(set) {
 }
 const rankChecked = readRankChecked();
 
+// メモ：ランキングの行は「r:カード名」、カード別の出品は「u:URL」で覚える。共有の状態にも入る
+const MEMO_KEY = "memos";
+function readMemos() { try { return JSON.parse(localStorage.getItem(MEMO_KEY) || "{}"); } catch { return {}; } }
+function writeMemos(o) { try { localStorage.setItem(MEMO_KEY, JSON.stringify(o)); } catch { /* 保存できなくても表示は動く */ } }
+const memos = readMemos();
+// 小さなメモ欄。「メモ」（または「編集」）を押すと入力になり、外すか Enter で保存。空にすると消える
+function memoBox(key) {
+  const wrap = el("div", "memo");
+  function showView() {
+    wrap.replaceChildren();
+    const t = memos[key];
+    if (t) wrap.appendChild(el("span", "memo-text", t));
+    const b = el("button", "memo-btn", t ? "編集" : "メモ");
+    b.type = "button";
+    b.addEventListener("click", showEdit);
+    wrap.appendChild(b);
+  }
+  function showEdit() {
+    wrap.replaceChildren();
+    const inp = el("input", "memo-input");
+    inp.type = "text";
+    inp.maxLength = 200;
+    inp.placeholder = "メモ";
+    inp.value = memos[key] || "";
+    inp.addEventListener("change", () => {
+      const v = inp.value.trim();
+      if (v) memos[key] = v; else delete memos[key];
+      writeMemos(memos);
+      pushShared("memo", key, v);
+      showView();
+    });
+    wrap.appendChild(inp);
+    inp.focus();
+  }
+  showView();
+  return wrap;
+}
+
 // 出品1件の行。除外中の出品は薄く表示して、もう一度押すと取り消せる（最安値の計算からは外れる）
 function siteBlock(name, cls, rows, cheapest, excluded, toggle, link) {
   const box = el("div", "site " + cls);
@@ -299,6 +341,7 @@ function siteBlock(name, cls, rows, cheapest, excluded, toggle, link) {
     xbtn.setAttribute("aria-pressed", String(off));
     xbtn.addEventListener("click", () => toggle(r["URL"]));
     actions.appendChild(xbtn);
+    li.appendChild(memoBox("u:" + r["URL"]));
     list.appendChild(li);
   }
   box.appendChild(list);
@@ -364,6 +407,7 @@ function rankingSection(gaps) {
     });
     li.appendChild(a);
     li.appendChild(el("span", "gap-detail", "PayPay " + yen(g.ppMin) + " ／ " + g.otherName + " " + yen(g.otherMin)));
+    li.appendChild(memoBox("r:" + rk));
     list.appendChild(li);
   });
   section.appendChild(list);
@@ -427,21 +471,22 @@ async function ghPutState(state, sha) {
   });
 }
 function currentState() {
-  return { excluded: [...excluded], checked: Object.fromEntries(checked), rankChecked: [...rankChecked] };
+  return { excluded: [...excluded], checked: Object.fromEntries(checked), rankChecked: [...rankChecked], memos: { ...memos } };
 }
 function applyState(st) {
   excluded.clear(); (st.excluded || []).forEach(u => excluded.add(u));
   checked.clear(); Object.entries(st.checked || {}).forEach(([u, t]) => checked.set(u, t));
   rankChecked.clear(); (st.rankChecked || []).forEach(k => rankChecked.add(k));
-  writeExcluded(excluded); writeChecked(checked); writeRankChecked(rankChecked);
+  Object.keys(memos).forEach(k => delete memos[k]); Object.assign(memos, st.memos || {});
+  writeExcluded(excluded); writeChecked(checked); writeRankChecked(rankChecked); writeMemos(memos);
 }
 // 共有の状態を読む。共有に何もなければ、この端末の保存を共有に上げる（初回のつなぎ）
 async function pullShared() {
   if (!getToken()) { setSyncText("この端末の中だけに保存しています。"); return; }
   try {
     const cur = await ghGetState();
-    const empty = !cur || (!(cur.state.excluded || []).length && !Object.keys(cur.state.checked || {}).length && !(cur.state.rankChecked || []).length);
-    if (empty && (excluded.size || checked.size || rankChecked.size)) {
+    const empty = !cur || (!(cur.state.excluded || []).length && !Object.keys(cur.state.checked || {}).length && !(cur.state.rankChecked || []).length && !Object.keys(cur.state.memos || {}).length);
+    if (empty && (excluded.size || checked.size || rankChecked.size || Object.keys(memos).length)) {
       const res = await ghPutState(currentState(), cur?.sha);
       if (!res.ok) throw new Error("書き込み " + res.status);
     } else if (cur) {
@@ -458,10 +503,11 @@ async function pushShared(kind, key, on) {
   try {
     for (let i = 0; i < 4; i++) {
       const cur = await ghGetState();
-      const st = cur ? cur.state : { excluded: [], checked: {}, rankChecked: [] };
-      st.excluded ||= []; st.checked ||= {}; st.rankChecked ||= [];
+      const st = cur ? cur.state : { excluded: [], checked: {}, rankChecked: [], memos: {} };
+      st.excluded ||= []; st.checked ||= {}; st.rankChecked ||= []; st.memos ||= {};
       if (kind === "excluded") { const s = new Set(st.excluded); on ? s.add(key) : s.delete(key); st.excluded = [...s]; }
       else if (kind === "checked") { if (on) st.checked[key] = Date.now(); else delete st.checked[key]; }
+      else if (kind === "memo") { if (on) st.memos[key] = on; else delete st.memos[key]; } // メモのときは on に文字を入れる（空なら消す）
       else { const s = new Set(st.rankChecked); on ? s.add(key) : s.delete(key); st.rankChecked = [...s]; }
       const res = await ghPutState(st, cur?.sha);
       if (res.ok) { setSyncText("共有に保存しました。"); return; }

@@ -74,6 +74,10 @@ li.checked { box-shadow: inset 3px 0 0 var(--best); padding-left: 8px; }
 .gap-diff { color: var(--gap); font-weight: 700; font-variant-numeric: tabular-nums; min-width: 6em; }
 .tabs { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 14px; padding: 8px 0; position: sticky; top: 0; z-index: 10; background: var(--bg); }
 .tab { font: inherit; padding: 6px 14px; border: 1px solid var(--rule); border-radius: 999px; background: var(--paper); color: var(--ink); cursor: pointer; }
+.updated-top { margin: 0 0 8px; font-size: 13px; color: var(--muted); }
+.rank-filter { margin: 0 0 10px; }
+.rank-filter button { font: inherit; font-size: 13px; padding: 4px 12px; border: 1px solid var(--rule); border-radius: 999px; background: var(--paper); color: var(--ink); cursor: pointer; }
+.rank-filter button[aria-pressed="true"] { background: var(--best); border-color: var(--best); color: var(--paper); }
 .tab[aria-selected="true"] { background: var(--ink); color: var(--paper); }
 .gap-detail { flex: 1 1 100%; min-width: 0; color: var(--muted); font-size: 13px; font-variant-numeric: tabular-nums; }
 table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; font-size: 13px; }
@@ -113,6 +117,7 @@ footer { margin-top: 20px; color: var(--muted); font-size: 12px; }
   <header>
     <h1>ポケカ最安値 PayPayとメルカリ</h1>
   </header>
+  <p id="updated" class="updated-top" hidden></p>
   <nav id="tabs" class="tabs" hidden>
     <button type="button" class="tab" data-tab="ranking" aria-selected="true">差額ランキング</button>
     <button type="button" class="tab" data-tab="cards" aria-selected="false">カード別</button>
@@ -125,7 +130,6 @@ footer { margin-top: 20px; color: var(--muted); font-size: 12px; }
     <p id="gate-msg" class="empty" hidden>パスワードが違います。</p>
   </form>
   <div id="cards" hidden><p class="empty">結果を読み込んでいます…</p></div>
-  <footer id="updated" hidden></footer>
   <footer id="sync" hidden></footer>
 </main>
 <script>
@@ -308,10 +312,19 @@ function openCard(id) {
 }
 
 // 差額ランキング：PayPay の最安から、メルカリ・SNKRDUNK のうち安い方の最安を引いた差（絶対値の円）が大きい順
+let rankOnlyChecked = false;   // ✓ を付けたカードだけ表示（見た目の絞り込み。保存はしない）
 function rankingSection(gaps) {
   const section = el("section", "card");
+  const filter = el("div", "rank-filter");
+  const fb = el("button", null, "✓ を付けたものだけ");
+  fb.type = "button";
+  fb.setAttribute("aria-pressed", String(rankOnlyChecked));
+  fb.addEventListener("click", () => { rankOnlyChecked = !rankOnlyChecked; render(); });
+  filter.appendChild(fb);
+  section.appendChild(filter);
   const list = el("ol", "gap-list");
   gaps.forEach((g, i) => {
+    if (rankOnlyChecked && !rankChecked.has(keyOf(g.card))) return;
     const li = el("li");
     const rk = keyOf(g.card);
     const on = rankChecked.has(rk);
@@ -324,6 +337,7 @@ function rankingSection(gaps) {
       if (rankChecked.has(rk)) rankChecked.delete(rk); else rankChecked.add(rk);
       writeRankChecked(rankChecked);
       pushShared("rank", rk, rankChecked.has(rk));
+      if (rankOnlyChecked) { const top = window.scrollY; render(); window.scrollTo(0, top); return; }
       rb.setAttribute("aria-pressed", String(rankChecked.has(rk)));
       li.classList.toggle("rank-checked", rankChecked.has(rk));
     });
@@ -463,23 +477,32 @@ function refreshChecked(allRows) {
   if (changed) writeChecked(checked);
 }
 
-async function load() {
-  const [ppText, mcText, snText] = await Promise.all(
-    Object.values(SOURCES).map(url => fetch(url, { cache: "no-store" }).then(r => {
+// 一時的な失敗（混雑・通信の瞬断）で落ちないように、20秒で打ち切って、最大3回まで読み直す
+async function fetchText(url) {
+  let lastErr;
+  for (let i = 0; i < 3; i++) {
+    const ctl = new AbortController();
+    const timer = setTimeout(() => ctl.abort(), 20000);
+    try {
+      const r = await fetch(url, { cache: "no-store", signal: ctl.signal });
       if (!r.ok) throw new Error(r.status + " " + url);
-      return r.text();
-    }))
-  );
-  try {
-    const res = await fetch(LINKS_URL, { cache: "no-store" });
-    if (res.ok) links = await res.json();
-  } catch { /* リンクの表が読めなくても、出品の表示は動く（サイト名は普通の文字になる） */ }
-  await pullShared(); // 他の端末の除外・チェックを取り込む（トークンがなければ、この端末の保存のまま）
+      return await r.text();
+    } catch (e) {
+      lastErr = e.name === "AbortError" ? new Error("時間切れ " + url) : e;
+      await new Promise(res => setTimeout(res, 800 * (i + 1)));
+    } finally { clearTimeout(timer); }
+  }
+  throw lastErr;
+}
+
+async function load() {
+  const linksPromise = fetchText(LINKS_URL).then(t => { links = JSON.parse(t); }).catch(() => { /* リンクの表が読めなくても、出品の表示は動く */ });
+  const [ppText, mcText, snText] = await Promise.all(Object.values(SOURCES).map(fetchText));
+  await linksPromise;
   const pp = parseCsv(ppText);
   const mc = parseCsv(mcText);
   const sn = parseCsv(snText);
   const all = [...pp, ...mc, ...sn];
-  if (pp.length && mc.length && sn.length) refreshChecked(all);
 
   // カード名の統一：全角・半角の違いや空白を無視して同じカードとみなし、表示は PayPay の名前にそろえる
   const display = {};
@@ -498,6 +521,12 @@ async function load() {
 
   data = { pp, mc, sn, ordered };
   render();
+  // 共有の取り込みは表示のあとに行う（共有が遅くても、一覧の表示は待たせない）。変わっていたら描き直す
+  const before = JSON.stringify(currentState());
+  pullShared().then(() => {
+    if (pp.length && mc.length && sn.length) refreshChecked(all);
+    if (JSON.stringify(currentState()) !== before) render();
+  });
 
   // タブで切り替える（ページは移動しない）：差額ランキング と カード別
   document.getElementById("tabs").hidden = false;
@@ -594,7 +623,10 @@ function render() {
 
 function showError(err) {
   const root = document.getElementById("cards");
-  root.replaceChildren(el("p", "empty", "結果を読み込めませんでした：" + err.message));
+  const btn = el("button", "tab", "もう一度読み込む");
+  btn.type = "button";
+  btn.onclick = () => location.reload();
+  root.replaceChildren(el("p", "empty", "結果を読み込めませんでした（3回試しました）：" + err.message), btn);
 }
 
 // 【確認用・一時】パスワードを外している。戻すときは、この行と gate の hidden を消す（git revert でも戻せる）

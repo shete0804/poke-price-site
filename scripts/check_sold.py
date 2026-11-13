@@ -4,7 +4,7 @@
 - 判定:
   - メルカリ: 商品詳細の status が sold_out（取引中 trading は売り切れ扱いにしない）。
   - スニダン: 出品一覧で status 4（販売済み）。一覧から消えていた場合も「売れた可能性」として知らせる。
-  - PayPay: まだ売り切れの表示を確認できていないので対象外。
+  - PayPay: 出品ページの itemStatus が OPEN 以外なら売り切れとみなす（OPEN 以外の値は未確認。429 などで取れなければ知らせない）。
 - 一度知らせた URL は results/sold_notified.json に残し、二度知らせない。
 - 必要な環境変数: NTFY_TOPIC（なければ送らず画面に出すだけ）
 
@@ -39,6 +39,24 @@ MERCARI_WAIT_SEC = 0.5
 
 SNKR_RE = re.compile(r"snkrdunk\.com/apparels/(\d+)/used/(\d+)")
 MERCARI_RE = re.compile(r"jp\.mercari\.com/(?:item|shops/product)/([A-Za-z0-9]+)")
+PAYPAY_RE = re.compile(r"paypayfleamarket\.yahoo\.co\.jp/item/([A-Za-z0-9]+)")
+PAYPAY_WAIT_SEC = 6
+
+
+def paypay_status(item_id: str) -> str:
+    """PayPay の出品ページの itemStatus。OPEN なら 'on_sale'、それ以外は 'other'（売り切れ想定）。
+    取れない（ページが無い・429 など）場合は 'unknown'（知らせない）。"""
+    req = urllib.request.Request(f"https://paypayfleamarket.yahoo.co.jp/item/{item_id}",
+                                 headers={"User-Agent": UA, "Accept-Language": "ja"})
+    try:
+        with urllib.request.urlopen(req, timeout=30) as res:
+            html = res.read().decode("utf-8", "replace")
+    except urllib.error.HTTPError:
+        return "unknown"
+    m = re.search(r'"itemStatus"\s*:\s*"([A-Z_]+)"', html)
+    if not m:
+        return "unknown"
+    return "on_sale" if m.group(1) == "OPEN" else "other"
 
 
 def snkr_get(path: str):
@@ -136,6 +154,11 @@ async def main() -> int:
                     # 一覧にも無く、個別ページも 404（売れた、または取り下げ）
                     reason = "出品が消えた（売れた・取り下げ）"
                 time.sleep(SNKR_WAIT_SEC)
+            elif PAYPAY_RE.search(url):
+                st = paypay_status(PAYPAY_RE.search(url).group(1))
+                if st == "other":
+                    reason = "売り切れ（PayPay）"
+                time.sleep(PAYPAY_WAIT_SEC)
             else:
                 m = MERCARI_RE.search(url)
                 if not m:

@@ -76,6 +76,7 @@ li.checked { box-shadow: inset 3px 0 0 var(--best); padding-left: 8px; }
 .tab { font: inherit; padding: 6px 14px; border: 1px solid var(--rule); border-radius: 999px; background: var(--paper); color: var(--ink); cursor: pointer; }
 .updated-top { margin: 0 0 8px; font-size: 13px; color: var(--muted); }
 .card-title-link { cursor: pointer; }
+.card-search { width: 100%; box-sizing: border-box; font: inherit; font-size: 14px; margin: 0 0 10px; padding: 6px 10px; border: 1px solid var(--rule); border-radius: 8px; background: var(--paper); color: var(--ink); }
 .memo { flex: 1 1 100%; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; font-size: 12px; color: var(--muted); }
 .memo-text { color: var(--ink); overflow-wrap: anywhere; }
 .memo-btn { font: inherit; font-size: 11px; padding: 1px 8px; border: 1px solid var(--rule); border-radius: 999px; background: var(--paper); color: var(--muted); cursor: pointer; }
@@ -124,6 +125,7 @@ footer { margin-top: 20px; color: var(--muted); font-size: 12px; }
     <h1>ポケカ最安値 PayPayとメルカリ</h1>
   </header>
   <p id="updated" class="updated-top" hidden></p>
+  <input type="search" id="card-search" class="card-search" placeholder="カード名で絞り込み" hidden>
   <nav id="tabs" class="tabs" hidden>
     <button type="button" class="tab" data-tab="ranking" aria-selected="true">差額ランキング</button>
     <button type="button" class="tab" data-tab="cards" aria-selected="false">カード別</button>
@@ -376,6 +378,9 @@ function openRank(idx) {
 
 // 差額ランキング：PayPay の最安から、メルカリ・SNKRDUNK のうち安い方の最安を引いた差（絶対値の円）が大きい順
 let rankOnlyChecked = false;   // ✓ を付けたカードだけ表示（見た目の絞り込み。保存はしない）
+let searchQ = "";              // カード名の検索（見た目だけ。保存はしない）
+const hit = name => !searchQ || keyOf(name).includes(keyOf(searchQ));
+document.getElementById("card-search").addEventListener("input", e => { searchQ = e.target.value.trim(); if (data) render(); });
 function rankingSection(gaps) {
   const section = el("section", "card");
   const filter = el("div", "rank-filter");
@@ -388,6 +393,7 @@ function rankingSection(gaps) {
   const list = el("ol", "gap-list");
   gaps.forEach((g, i) => {
     if (rankOnlyChecked && !rankChecked.has(keyOf(g.card))) return;
+    if (!hit(g.card)) return;
     const li = el("li");
     li.id = "rank-" + g.idx;
     const rk = keyOf(g.card);
@@ -600,6 +606,7 @@ async function load() {
   const ordered = names.filter(n => n !== held).concat(names.includes(held) ? [held] : []);
 
   data = { pp, mc, sn, ordered };
+  document.getElementById("card-search").hidden = false;
   render();
   // 共有の取り込みは表示のあとに行う（共有が遅くても、一覧の表示は待たせない）。変わっていたら描き直す
   const before = JSON.stringify(currentState());
@@ -681,7 +688,7 @@ function render() {
     grid.appendChild(siteBlock("メルカリ", "mercari", mcRows, mcMin, excluded, toggleListing, lk.mercari));
     grid.appendChild(siteBlock("SNKRDUNK", "snkrdunk", snRows, snMin, excluded, toggleListing, lk.snkrdunk));
     section.appendChild(grid);
-    cardBlocks.push(section);
+    if (hit(card)) cardBlocks.push(section);
   });
 
   // 差額の大きい順（プラスの大きい差額が上、マイナスは下へ）

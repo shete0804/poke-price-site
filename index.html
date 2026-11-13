@@ -235,6 +235,11 @@ const MEMO_KEY = "memos";
 function readMemos() { try { return JSON.parse(localStorage.getItem(MEMO_KEY) || "{}"); } catch { return {}; } }
 function writeMemos(o) { try { localStorage.setItem(MEMO_KEY, JSON.stringify(o)); } catch { /* 保存できなくても表示は動く */ } }
 const memos = readMemos();
+// 共有に送れていないメモ（キー → 1）。更新で消えないよう、次に開いたとき・次に送るときに送り直す
+const MEMO_PENDING_KEY = "memosPending";
+function readPending() { try { return JSON.parse(localStorage.getItem(MEMO_PENDING_KEY) || "{}"); } catch { return {}; } }
+function writePending(o) { try { localStorage.setItem(MEMO_PENDING_KEY, JSON.stringify(o)); } catch { /* 保存できなくても表示は動く */ } }
+const pending = readPending();
 // 小さなメモ欄。「メモ」（または「編集」）を押すと入力になり、外すか Enter で保存。空にすると消える
 function memoBox(key) {
   const wrap = el("div", "memo");
@@ -254,11 +259,15 @@ function memoBox(key) {
     inp.maxLength = 200;
     inp.placeholder = "メモ";
     inp.value = memos[key] || "";
-    inp.addEventListener("change", () => {
+    // 打つたびに、この端末には保存する（ページを更新しても残る）。共有へは、枠の外す・Enter のときに送る
+    inp.addEventListener("input", () => {
       const v = inp.value.trim();
       if (v) memos[key] = v; else delete memos[key];
       writeMemos(memos);
-      pushShared("memo", key, v);
+      pending[key] = 1; writePending(pending);
+    });
+    inp.addEventListener("change", () => {
+      pushShared("memo", key, memos[key] || "").then(ok => { if (ok) { delete pending[key]; writePending(pending); } });
       showView();
     });
     wrap.appendChild(inp);
@@ -477,7 +486,10 @@ function applyState(st) {
   excluded.clear(); (st.excluded || []).forEach(u => excluded.add(u));
   checked.clear(); Object.entries(st.checked || {}).forEach(([u, t]) => checked.set(u, t));
   rankChecked.clear(); (st.rankChecked || []).forEach(k => rankChecked.add(k));
-  Object.keys(memos).forEach(k => delete memos[k]); Object.assign(memos, st.memos || {});
+  // 共有の内容に、まだ送れていないこの端末のメモ（pending）を重ねる。送れていない削除も反映する
+  const merged = { ...(st.memos || {}) };
+  Object.keys(pending).forEach(k => { if (memos[k]) merged[k] = memos[k]; else delete merged[k]; });
+  Object.keys(memos).forEach(k => delete memos[k]); Object.assign(memos, merged);
   writeExcluded(excluded); writeChecked(checked); writeRankChecked(rankChecked); writeMemos(memos);
 }
 // 共有の状態を読む。共有に何もなければ、この端末の保存を共有に上げる（初回のつなぎ）
@@ -489,17 +501,26 @@ async function pullShared() {
     if (empty && (excluded.size || checked.size || rankChecked.size || Object.keys(memos).length)) {
       const res = await ghPutState(currentState(), cur?.sha);
       if (!res.ok) throw new Error("書き込み " + res.status);
+      Object.keys(pending).forEach(k => delete pending[k]); writePending(pending); // 全部いっしょに送れた
     } else if (cur) {
       applyState(cur.state);
+      flushMemos(); // 送れていないメモを送り直す（閉じる前に送れなかったもの）
     }
     setSyncText("除外・チェックは、トークンをつないだ端末で共通です。");
   } catch (e) {
     setSyncText("共有を読めませんでした（" + e.message + "）。この端末の保存を使っています。", true);
   }
 }
-// 1つの操作を共有に反映する（読み直して、その1件だけ書き換えて上げる。他の端末の操作とぶつかったらやり直す）
+// 送れていないメモを、1件ずつ送り直す
+async function flushMemos() {
+  for (const k of Object.keys(pending)) {
+    const ok = await pushShared("memo", k, memos[k] || "");
+    if (ok) { delete pending[k]; writePending(pending); }
+  }
+}
+// 1つの操作を共有に反映する（読み直して、その1件だけ書き換えて上げる。他の端末の操作とぶつかったらやり直す）。成功なら true
 async function pushShared(kind, key, on) {
-  if (!getToken()) return;
+  if (!getToken()) return true;
   try {
     for (let i = 0; i < 4; i++) {
       const cur = await ghGetState();
@@ -510,12 +531,13 @@ async function pushShared(kind, key, on) {
       else if (kind === "memo") { if (on) st.memos[key] = on; else delete st.memos[key]; } // メモのときは on に文字を入れる（空なら消す）
       else { const s = new Set(st.rankChecked); on ? s.add(key) : s.delete(key); st.rankChecked = [...s]; }
       const res = await ghPutState(st, cur?.sha);
-      if (res.ok) { setSyncText("共有に保存しました。"); return; }
+      if (res.ok) { setSyncText("共有に保存しました。"); return true; }
       if (res.status !== 409 && res.status !== 422) throw new Error("書き込み " + res.status);
     }
     throw new Error("他の端末と重なりました");
   } catch (e) {
     setSyncText("共有に保存できませんでした（" + e.message + "）。この端末にだけ保存しています。", true);
+    return false;
   }
 }
 

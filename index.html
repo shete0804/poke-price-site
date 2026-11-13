@@ -324,7 +324,6 @@ function rankingSection(gaps) {
     rb.addEventListener("click", () => {
       if (rankChecked.has(rk)) rankChecked.delete(rk); else rankChecked.add(rk);
       writeRankChecked(rankChecked);
-      pushShared("rank", rk, rankChecked.has(rk));
       rb.setAttribute("aria-pressed", String(rankChecked.has(rk)));
       li.classList.toggle("rank-checked", rankChecked.has(rk));
     });
@@ -405,21 +404,20 @@ async function ghPutState(state, sha) {
   });
 }
 function currentState() {
-  return { excluded: [...excluded], checked: Object.fromEntries(checked), rankChecked: [...rankChecked] };
+  return { excluded: [...excluded], checked: Object.fromEntries(checked) };
 }
 function applyState(st) {
   excluded.clear(); (st.excluded || []).forEach(u => excluded.add(u));
   checked.clear(); Object.entries(st.checked || {}).forEach(([u, t]) => checked.set(u, t));
-  rankChecked.clear(); (st.rankChecked || []).forEach(k => rankChecked.add(k));
-  writeExcluded(excluded); writeChecked(checked); writeRankChecked(rankChecked);
+  writeExcluded(excluded); writeChecked(checked);
 }
 // 共有の状態を読む。共有に何もなければ、この端末の保存を共有に上げる（初回のつなぎ）
 async function pullShared() {
   if (!getToken()) { setSyncText("この端末の中だけに保存しています。"); return; }
   try {
     const cur = await ghGetState();
-    const empty = !cur || (!(cur.state.excluded || []).length && !Object.keys(cur.state.checked || {}).length && !(cur.state.rankChecked || []).length);
-    if (empty && (excluded.size || checked.size || rankChecked.size)) {
+    const empty = !cur || (!(cur.state.excluded || []).length && !Object.keys(cur.state.checked || {}).length);
+    if (empty && (excluded.size || checked.size)) {
       const res = await ghPutState(currentState(), cur?.sha);
       if (!res.ok) throw new Error("書き込み " + res.status);
     } else if (cur) {
@@ -436,11 +434,10 @@ async function pushShared(kind, key, on) {
   try {
     for (let i = 0; i < 4; i++) {
       const cur = await ghGetState();
-      const st = cur ? cur.state : { excluded: [], checked: {}, rankChecked: [] };
-      st.excluded ||= []; st.checked ||= {}; st.rankChecked ||= [];
+      const st = cur ? cur.state : { excluded: [], checked: {} };
+      st.excluded ||= []; st.checked ||= {};
       if (kind === "excluded") { const s = new Set(st.excluded); on ? s.add(key) : s.delete(key); st.excluded = [...s]; }
       else if (kind === "checked") { if (on) st.checked[key] = Date.now(); else delete st.checked[key]; }
-      else { const s = new Set(st.rankChecked); on ? s.add(key) : s.delete(key); st.rankChecked = [...s]; }
       const res = await ghPutState(st, cur?.sha);
       if (res.ok) { setSyncText("共有に保存しました。"); return; }
       if (res.status !== 409 && res.status !== 422) throw new Error("書き込み " + res.status);
@@ -584,6 +581,9 @@ function render() {
   rankingBox.appendChild(rankingSection(gaps));
   const cardsBox = el("div", null);
   cardsBox.id = "card-list";
+  const syncBar = document.getElementById("sync");
+  syncBar.style.cssText = "font-size:13px;margin:0 0 12px;padding:8px 10px;border:1px solid var(--rule);border-radius:8px";
+  cardsBox.appendChild(syncBar); // 共有の状態と「つなぐ」リンクは、カード別の一番上に出す
   cardBlocks.forEach(s => cardsBox.appendChild(s));
 
   const updated = (pp[0]?.["更新"] ?? "") + "（PayPay） / " + (mc[0]?.["更新"] ?? "") + "（メルカリ）";

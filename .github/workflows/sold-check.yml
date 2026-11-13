@@ -1,0 +1,48 @@
+name: Sold check
+
+# チェックした出品（メルカリ・スニダン）が売り切れたら ntfy で知らせる
+on:
+  workflow_dispatch:
+  schedule:
+    # 毎時25分（スニダンの :23 と重ならないように）。GitHub の定期実行は遅れることがある
+    - cron: "25 * * * *"
+
+concurrency:
+  group: sold-check
+  cancel-in-progress: false
+
+jobs:
+  check:
+    timeout-minutes: 20
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install mercapi requests
+
+      - name: Check sold listings
+        env:
+          NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
+        run: python scripts/check_sold.py
+
+      - name: Commit notified list
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add results/sold_notified.json
+          if git diff --cached --quiet; then
+            echo "変更なし"
+          else
+            git commit -m "chore: update sold notifications [skip ci]"
+            git pull --rebase -q
+            git push
+          fi

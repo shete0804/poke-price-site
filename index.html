@@ -129,6 +129,7 @@ footer { margin-top: 20px; color: var(--muted); font-size: 12px; }
   <nav id="tabs" class="tabs" hidden>
     <button type="button" class="tab" data-tab="ranking" aria-selected="true">差額ランキング</button>
     <button type="button" class="tab" data-tab="cards" aria-selected="false">カード別</button>
+    <button type="button" class="tab" data-tab="candidates" aria-selected="false">取りこぼし候補</button>
     <button type="button" class="reload" onclick="location.reload()">↻ 再読み込み</button>
   </nav>
   <form id="gate" class="card" hidden>
@@ -182,6 +183,24 @@ function parseCsv(text) {
     header.forEach((h, i) => { row[h] = cells[i] ?? ""; });
     return row;
   });
+}
+
+// 引用符（"…"）とカンマ・改行を正しく読む CSV の読み込み（候補の題名に , が入っても崩れない）
+function parseCsvQ(text) {
+  const rows = [];
+  let row = [], cur = "", q = false;
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (q) {
+      if (c === '"') { if (text[i + 1] === '"') { cur += '"'; i++; } else q = false; } else cur += c;
+    } else if (c === '"') q = true;
+    else if (c === ",") { row.push(cur); cur = ""; }
+    else if (c === "\n") { row.push(cur); rows.push(row); row = []; cur = ""; }
+    else if (c !== "\r") cur += c;
+  }
+  if (cur || row.length) { row.push(cur); rows.push(row); }
+  const [head, ...body] = rows.filter(r => r.length > 1 || r[0]);
+  return (body || []).map(r => Object.fromEntries((head || []).map((h, i) => [h, r[i] ?? ""])));
 }
 
 function el(tag, cls, text) {
@@ -435,6 +454,8 @@ function rankingSection(gaps) {
 const keyOf = s => s.replace(/＆/g, "&").replace(/[\s　]/g, "").toLowerCase();
 let links = {};           // カードごとの検索ページ・商品ページのリンク（results/links.json。読めなくても表示は動く）
 const LINKS_URL = "https://raw.githubusercontent.com/shete0804/poke-price-site/main/results/links.json";
+// 取りこぼし検知の候補（mercari-scraper が毎回書く CSV）
+const CAND_URL = "https://raw.githubusercontent.com/shete0804/mercari-scraper/main/results/detect_latest.csv";
 
 let data = null;          // 取得した CSV（除外を変えたときに計算し直すため覚えておく）
 let currentTab = "ranking";
@@ -585,6 +606,7 @@ async function load() {
   const linksPromise = fetchText(LINKS_URL).then(t => { links = JSON.parse(t); }).catch(() => { /* リンクの表が読めなくても、出品の表示は動く */ });
   const [ppText, mcText, snText] = await Promise.all(Object.values(SOURCES).map(fetchText));
   await linksPromise;
+  const candPromise = fetchText(CAND_URL).then(t => parseCsvQ(t)).catch(() => []);
   const pp = parseCsv(ppText);
   const mc = parseCsv(mcText);
   const sn = parseCsv(snText);
@@ -605,7 +627,8 @@ async function load() {
   const held = "ピカチュウex";
   const ordered = names.filter(n => n !== held).concat(names.includes(held) ? [held] : []);
 
-  data = { pp, mc, sn, ordered };
+  const cands = await candPromise;
+  data = { pp, mc, sn, ordered, cands };
   document.getElementById("card-search").hidden = false;
   render();
   // 共有の取り込みは表示のあとに行う（共有が遅くても、一覧の表示は待たせない）。変わっていたら描き直す
@@ -645,10 +668,37 @@ function toggleCheck(url) {
   window.scrollTo(0, top);
 }
 
+// 取りこぼし候補の一覧（除外したものは出さない。偽物・別の版も混ざるので、開いて確かめる）
+function candidatesSection(cands) {
+  const box = el("div", null);
+  box.id = "candidates";
+  box.hidden = currentTab !== "candidates";
+  box.appendChild(el("p", "sub", "取りこぼし検知が見つけた候補です。偽物や別の版も混ざります。リンクを開いて確かめてください。"));
+  const shown = cands.filter(c => c["URL"] && !excluded.has(c["URL"]));
+  if (!shown.length) { box.appendChild(el("p", "empty", "候補はありません。")); return box; }
+  shown.sort((a, b) => (a["カード"] || "").localeCompare(b["カード"] || "", "ja") || Number(a["価格"]) - Number(b["価格"]));
+  const list = el("ol", "gap-list");
+  for (const c of shown) {
+    const li = el("li");
+    li.appendChild(el("span", "gap-diff", yen(Number(c["価格"]))));
+    const a = el("a", null, c["カード"]);
+    a.href = c["URL"];
+    a.target = "_blank";
+    a.rel = "noopener noreferrer";
+    li.appendChild(a);
+    const now = c["今の最安"] ? yen(Number(c["今の最安"])) : "なし";
+    li.appendChild(el("span", "gap-detail", c["サイト"] + " ／ 今の最安 " + now + " ／ " + c["題名"]));
+    list.appendChild(li);
+  }
+  box.appendChild(list);
+  return box;
+}
+
 function showTab() {
-  const isRanking = currentTab === "ranking";
-  document.getElementById("ranking").hidden = !isRanking;
-  document.getElementById("card-list").hidden = isRanking;
+  document.getElementById("ranking").hidden = currentTab !== "ranking";
+  document.getElementById("card-list").hidden = currentTab !== "cards";
+  const cb = document.getElementById("candidates");
+  if (cb) cb.hidden = currentTab !== "candidates";
   document.querySelectorAll("#tabs .tab").forEach(b => b.setAttribute("aria-selected", String(b.dataset.tab === currentTab)));
 }
 
@@ -707,7 +757,8 @@ function render() {
   const updated = (pp[0]?.["更新"] ?? "") + "（PayPay） / " + (mc[0]?.["更新"] ?? "") + "（メルカリ）";
   document.getElementById("updated").textContent = "結果の更新：" + updated + "。開いた時点で最新の CSV を読んでいます。";
 
-  document.getElementById("cards").replaceChildren(rankingBox, cardsBox);
+  const candBox = candidatesSection(data.cands || []);
+  document.getElementById("cards").replaceChildren(rankingBox, cardsBox, candBox);
   showTab();
 }
 

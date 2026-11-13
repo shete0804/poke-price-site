@@ -128,9 +128,7 @@ footer { margin-top: 20px; color: var(--muted); font-size: 12px; }
   <input type="search" id="card-search" class="card-search" placeholder="カード名で絞り込み" hidden>
   <nav id="tabs" class="tabs" hidden>
     <button type="button" class="tab" data-tab="ranking" aria-selected="true">差額ランキング</button>
-    <button type="button" class="tab" data-tab="cards" aria-selected="false">カード別</button>
-    <button type="button" class="tab" data-tab="candidates" aria-selected="false">取りこぼし候補</button>
-    <button type="button" class="reload" onclick="location.reload()">↻ 再読み込み</button>
+    <button type="button" class="tab" data-tab="cards" aria-selected="false">カード別</button>    <button type="button" class="reload" onclick="location.reload()">↻ 再読み込み</button>
   </nav>
   <form id="gate" class="card" hidden>
     <label for="pw">パスワード</label>
@@ -339,7 +337,7 @@ function siteBlock(name, cls, rows, cheapest, excluded, toggle, link) {
       img.className = "thumb";
       li.appendChild(img);
     }
-    li.appendChild(el("span", "rank", r["順位"] + "位" + (r["状態"] ? " " + r["状態"] : "")));
+    li.appendChild(el("span", "rank", (r["順位"] ? r["順位"] + "位" : "検知") + (r["状態"] ? " " + r["状態"] : "")));
     const span = el("span", "price");
     const a = el("a", null, "¥" + price.toLocaleString("ja-JP"));
     a.href = r["URL"];
@@ -609,6 +607,14 @@ async function load() {
   const candPromise = fetchText(CAND_URL).then(t => parseCsvQ(t)).catch(() => []);
   const pp = parseCsv(ppText);
   const mc = parseCsv(mcText);
+  // 取りこぼし検知が「確信」と判定したメルカリの出品だけ、通常の一覧に混ぜる（順位はなし、「検知」と表示）
+  const cands = await candPromise;
+  const seenUrl = new Set(mc.map(r => r["URL"]));
+  for (const c of cands) {
+    if (c["確信"] !== "はい" || c["サイト"] !== "メルカリ" || !c["URL"] || seenUrl.has(c["URL"])) continue;
+    seenUrl.add(c["URL"]);
+    mc.push({ "カード": c["カード"], "価格": c["価格"], "順位": "", "状態": "", "URL": c["URL"], "写真": "", "更新": "" });
+  }
   const sn = parseCsv(snText);
   const all = [...pp, ...mc, ...sn];
 
@@ -627,8 +633,7 @@ async function load() {
   const held = "ピカチュウex";
   const ordered = names.filter(n => n !== held).concat(names.includes(held) ? [held] : []);
 
-  const cands = await candPromise;
-  data = { pp, mc, sn, ordered, cands };
+  data = { pp, mc, sn, ordered };
   document.getElementById("card-search").hidden = false;
   render();
   // 共有の取り込みは表示のあとに行う（共有が遅くても、一覧の表示は待たせない）。変わっていたら描き直す
@@ -668,37 +673,9 @@ function toggleCheck(url) {
   window.scrollTo(0, top);
 }
 
-// 取りこぼし候補の一覧（除外したものは出さない。偽物・別の版も混ざるので、開いて確かめる）
-function candidatesSection(cands) {
-  const box = el("div", null);
-  box.id = "candidates";
-  box.hidden = currentTab !== "candidates";
-  box.appendChild(el("p", "sub", "取りこぼし検知が見つけた候補です。偽物や別の版も混ざります。リンクを開いて確かめてください。"));
-  const shown = cands.filter(c => c["URL"] && !excluded.has(c["URL"]));
-  if (!shown.length) { box.appendChild(el("p", "empty", "候補はありません。")); return box; }
-  shown.sort((a, b) => (a["カード"] || "").localeCompare(b["カード"] || "", "ja") || Number(a["価格"]) - Number(b["価格"]));
-  const list = el("ol", "gap-list");
-  for (const c of shown) {
-    const li = el("li");
-    li.appendChild(el("span", "gap-diff", yen(Number(c["価格"]))));
-    const a = el("a", null, c["カード"]);
-    a.href = c["URL"];
-    a.target = "_blank";
-    a.rel = "noopener noreferrer";
-    li.appendChild(a);
-    const now = c["今の最安"] ? yen(Number(c["今の最安"])) : "なし";
-    li.appendChild(el("span", "gap-detail", c["サイト"] + " ／ 今の最安 " + now + " ／ " + c["題名"]));
-    list.appendChild(li);
-  }
-  box.appendChild(list);
-  return box;
-}
-
 function showTab() {
   document.getElementById("ranking").hidden = currentTab !== "ranking";
   document.getElementById("card-list").hidden = currentTab !== "cards";
-  const cb = document.getElementById("candidates");
-  if (cb) cb.hidden = currentTab !== "candidates";
   document.querySelectorAll("#tabs .tab").forEach(b => b.setAttribute("aria-selected", String(b.dataset.tab === currentTab)));
 }
 
@@ -714,7 +691,7 @@ function render() {
   const gaps = [];
   ordered.forEach((card, idx) => {
     const ppRows = pp.filter(r => r["カード"] === card).sort((a, b) => a["順位"] - b["順位"]);
-    const mcRows = mc.filter(r => r["カード"] === card).sort((a, b) => a["順位"] - b["順位"]);
+    const mcRows = mc.filter(r => r["カード"] === card).sort((a, b) => (a["順位"] || 999) - (b["順位"] || 999));
     const snRows = sn.filter(r => r["カード"] === card).sort((a, b) => a["順位"] - b["順位"]);
     const ppMin = best(live(ppRows));
     const mcMin = best(live(mcRows));
@@ -757,8 +734,7 @@ function render() {
   const updated = (pp[0]?.["更新"] ?? "") + "（PayPay） / " + (mc[0]?.["更新"] ?? "") + "（メルカリ）";
   document.getElementById("updated").textContent = "結果の更新：" + updated + "。開いた時点で最新の CSV を読んでいます。";
 
-  const candBox = candidatesSection(data.cands || []);
-  document.getElementById("cards").replaceChildren(rankingBox, cardsBox, candBox);
+  document.getElementById("cards").replaceChildren(rankingBox, cardsBox);
   showTab();
 }
 

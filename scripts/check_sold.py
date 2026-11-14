@@ -257,10 +257,18 @@ async def main() -> int:
             card = card or fetched_name
             price = catalog_price or fetched_price
             title, body = build_message(reason, card, price, url)
-            notify(title, body, url)
+            try:
+                notify(title, body, url)
+            except Exception as err:  # noqa: BLE001
+                # 送れなかったものは記録しない（次の実行でまた送る）。ほかの出品は続けて送る
+                errors.append(f"通知に失敗 {url}: {type(err).__name__}: {err}")
+                continue
             notified[url] = today
             sent += 1
             print(f"通知: {title} / {body.replace(chr(10), ' ')}")
+            # 送れたものは、途中で止まっても記録しておく（二重に送らないように）
+            NOTIFIED_PATH.parent.mkdir(parents=True, exist_ok=True)
+            NOTIFIED_PATH.write_text(json.dumps(notified, ensure_ascii=False, indent=1), encoding="utf-8")
 
     NOTIFIED_PATH.parent.mkdir(parents=True, exist_ok=True)
     NOTIFIED_PATH.write_text(json.dumps(notified, ensure_ascii=False, indent=1), encoding="utf-8")

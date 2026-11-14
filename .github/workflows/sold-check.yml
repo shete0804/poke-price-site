@@ -4,8 +4,8 @@ name: Sold check
 on:
   workflow_dispatch:
   schedule:
-    # 毎時25分（スニダンの :23 と重ならないように）。GitHub の定期実行は遅れることがある
-    - cron: "25 * * * *"
+    # 毎時45分（スニダン取得（:23 から約12分）が終わった後。カードラッシュ :17、PayPay・メルカリの :00・:30 とも重ならない）。GitHub の定期実行は遅れることがある
+    - cron: "45 * * * *"
 
 concurrency:
   group: sold-check

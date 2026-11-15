@@ -31,6 +31,7 @@ import requests
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 NOTIFIED_PATH = ROOT / "results" / "sold_notified.json"
+PRICE_PATH = ROOT / "results" / "price_last.json"  # 出品ごとの、前回確かめた価格（値下げ・値上げ通知に使う）
 STATE_URL = "https://raw.githubusercontent.com/shete0804/poke-price-site/state/results/state.json"
 # サイトの表示名と価格を探す CSV（カード・価格・URL の列がある）
 CATALOG_URLS = [
@@ -193,6 +194,13 @@ def notify(title: str, body: str, click: str) -> None:
     res.raise_for_status()
 
 
+def build_price_message(old: int, new: int, card: str, url: str) -> tuple[str, str]:
+    """値下げ・値上げの通知。本文は「前の価格 → 今の価格」と元の出品の URL。"""
+    word = "値下げ" if new < old else "値上げ"
+    title = f"【{word}】{card or '（カード名不明）'}"
+    return title, f"¥{old:,} → ¥{new:,}\n{url}"
+
+
 def build_message(reason: str, card: str, price: int | None, url: str) -> tuple[str, str]:
     """通知のタイトルと本文。タイトルは理由とサイトの表示名、本文は価格と元の出品の URL。"""
     name = card or "（カード名不明）"
@@ -207,6 +215,10 @@ async def main() -> int:
     notified: dict[str, str] = {}
     if NOTIFIED_PATH.exists():
         notified = json.loads(NOTIFIED_PATH.read_text(encoding="utf-8"))
+    prices: dict[str, int] = {}
+    if PRICE_PATH.exists():
+        prices = json.loads(PRICE_PATH.read_text(encoding="utf-8"))
+    price_changes = 0
     catalog = load_catalog()
     snkr_names = load_snkr_targets()
     today = datetime.now(JST).strftime("%Y-%m-%d")
@@ -248,6 +260,27 @@ async def main() -> int:
             errors.append(f"{url}: {type(err).__name__}: {err}")
             continue
 
+        if not reason and st == "on_sale" and fetched_price is not None:
+            # 販売中のまま価格が変わったら知らせる（初めて見た出品は、価格を覚えるだけ）
+            last = prices.get(url)
+            if last is not None and last != fetched_price:
+                card = catalog.get(url, ("", None))[0]
+                if not card and SNKR_RE.search(url):
+                    card = snkr_names.get(SNKR_RE.search(url).group(1), "")
+                card = card or fetched_name
+                title, body = build_price_message(last, fetched_price, card, url)
+                try:
+                    notify(title, body, url)
+                except Exception as err:  # noqa: BLE001
+                    # 送れなかったら、古い価格のまま残す（次の実行でまた比べる）
+                    errors.append(f"値段の通知に失敗 {url}: {type(err).__name__}: {err}")
+                    continue
+                price_changes += 1
+                print(f"値段の変化: {title} / {body.replace(chr(10), ' ')}")
+            prices[url] = fetched_price
+            PRICE_PATH.parent.mkdir(parents=True, exist_ok=True)
+            PRICE_PATH.write_text(json.dumps(prices, ensure_ascii=False, indent=1), encoding="utf-8")
+
         if reason:
             card, catalog_price = catalog.get(url, ("", None))
             # 表示名・価格は、サイトの CSV を優先。CSV に無ければ判定の時に取った値
@@ -272,7 +305,7 @@ async def main() -> int:
 
     NOTIFIED_PATH.parent.mkdir(parents=True, exist_ok=True)
     NOTIFIED_PATH.write_text(json.dumps(notified, ensure_ascii=False, indent=1), encoding="utf-8")
-    print(f"チェック {len(checked)} 件 / 新しく知らせた {sent} 件 / 判定できなかった {len(errors)} 件")
+    print(f"チェック {len(checked)} 件 / 新しく知らせた {sent} 件 / 値段の変化 {price_changes} 件 / 判定できなかった {len(errors)} 件")
     for e in errors[:10]:
         print("  判定できず:", e, file=sys.stderr)
     return 0
